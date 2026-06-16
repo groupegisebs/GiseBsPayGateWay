@@ -19,7 +19,6 @@ public static class DbSeeder
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationDbContext>>();
-        var environment = scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
 
         await db.Database.MigrateAsync();
 
@@ -75,8 +74,6 @@ public static class DbSeeder
 
             await db.SaveChangesAsync();
         }
-
-        await BoutiqueGiseSeeder.EnsureAsync(db, apiKeyService, auditService, logger, environment.IsDevelopment());
     }
 
     private static async Task EnsureAdminUserAsync(

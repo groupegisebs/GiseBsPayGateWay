@@ -58,13 +58,6 @@ jobs:
           echo "  UBUNTU1_CONNECTION_STRING    → ${{ secrets.UBUNTU1_CONNECTION_STRING != '' && 'OK' || 'manquant' }}"
           echo "  GISEBSPAY_CONNECTION_STRING  → ${{ secrets.GISEBSPAY_CONNECTION_STRING != '' && 'OK' || 'manquant' }}"
           echo ""
-          echo "Stripe / JWT (obligatoires — déployés vers secrets.json sur le serveur) :"
-          echo "  GISEBSPAY_STRIPE_PUBLISHABLE_KEY → ${{ secrets.GISEBSPAY_STRIPE_PUBLISHABLE_KEY != '' && 'OK' || 'manquant' }}"
-          echo "  GISEBSPAY_STRIPE_SECRET_KEY     → ${{ secrets.GISEBSPAY_STRIPE_SECRET_KEY != '' && 'OK' || 'manquant' }}"
-          echo "  GISEBSPAY_STRIPE_WEBHOOK_SECRET → ${{ secrets.GISEBSPAY_STRIPE_WEBHOOK_SECRET != '' && 'OK' || 'manquant' }}"
-          echo "  GISEBSPAY_JWT_SECRET_KEY        → ${{ secrets.GISEBSPAY_JWT_SECRET_KEY != '' && 'OK' || 'manquant' }}"
-          echo "  GISEBSPAY_STRIPE_LIVE_MODE      → ${{ secrets.GISEBSPAY_STRIPE_LIVE_MODE != '' && secrets.GISEBSPAY_STRIPE_LIVE_MODE || 'false (défaut)' }}"
-          echo ""
           echo "Host/User : secret, variable, ou défaut workflow (51.79.53.197 / ubuntu)"
           echo "Guide : https://github.com/${{ github.repository }}/blob/main/deploy/GITHUB-SECRETS.md"
 
@@ -86,11 +79,6 @@ jobs:
           SERVICE_SECRET: ${{ secrets.UBUNTU1_SERVICE_NAME }}
           PORT_APP_VAR: ${{ vars.GISEBSPAY_LISTEN_PORT }}
           PORT_APP_SECRET: ${{ secrets.GISEBSPAY_LISTEN_PORT }}
-          STRIPE_PK: ${{ secrets.GISEBSPAY_STRIPE_PUBLISHABLE_KEY }}
-          STRIPE_SK: ${{ secrets.GISEBSPAY_STRIPE_SECRET_KEY }}
-          STRIPE_WH: ${{ secrets.GISEBSPAY_STRIPE_WEBHOOK_SECRET }}
-          JWT_SK: ${{ secrets.GISEBSPAY_JWT_SECRET_KEY }}
-          STRIPE_LIVE: ${{ secrets.GISEBSPAY_STRIPE_LIVE_MODE }}
         run: |
           source deploy/gha-env.sh
 
@@ -127,13 +115,6 @@ jobs:
             echo "→ Ne pas réutiliser UBUNTU1_CONNECTION_STRING si elle pointe vers une autre base (ex. GiseMailSenderService)."
             missing=1
           fi
-          if [ -z "$STRIPE_PK" ] || [ -z "$STRIPE_SK" ] || [ -z "$STRIPE_WH" ] || [ -z "$JWT_SK" ]; then
-            echo "::error::Secrets Stripe/JWT manquants."
-            echo "→ GISEBSPAY_STRIPE_PUBLISHABLE_KEY, GISEBSPAY_STRIPE_SECRET_KEY,"
-            echo "→ GISEBSPAY_STRIPE_WEBHOOK_SECRET, GISEBSPAY_JWT_SECRET_KEY"
-            echo "→ Voir deploy/GITHUB-SECRETS.md"
-            missing=1
-          fi
           [ "$missing" -eq 0 ] || exit 1
 
           SSH_HOST=$(gha_sanitize_host "$SSH_HOST_RAW")
@@ -152,11 +133,6 @@ jobs:
           gha_write_env APP_NAME "$DEFAULT_APP_NAME"
           gha_write_env LISTEN_PORT "$LISTEN_PORT"
           gha_write_env CONNECTION_STRING "$(gha_sanitize "$CONNECTION_STRING_RAW")"
-          gha_write_env STRIPE_PUBLISHABLE_KEY "$(gha_sanitize "$STRIPE_PK")"
-          gha_write_env STRIPE_SECRET_KEY "$(gha_sanitize "$STRIPE_SK")"
-          gha_write_env STRIPE_WEBHOOK_SECRET "$(gha_sanitize "$STRIPE_WH")"
-          gha_write_env JWT_SECRET_KEY "$(gha_sanitize "$JWT_SK")"
-          gha_write_env STRIPE_LIVE_MODE "$(gha_sanitize "${STRIPE_LIVE:-false}")"
           echo "OK → ${SSH_USER}@${SSH_HOST}:${SSH_PORT} service=${SERVICE_NAME} port=${LISTEN_PORT}"
 
       - name: Setup SSH key
