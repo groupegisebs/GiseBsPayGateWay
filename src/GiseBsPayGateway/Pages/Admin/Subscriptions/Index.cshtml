@@ -1,0 +1,36 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.Subscriptions.IndexModel
+@{
+    ViewData["Title"] = "Abonnements";
+    Layout = "_Layout";
+}
+
+<h1 class="mb-4">Abonnements</h1>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Code</th>
+            <th>Application</th>
+            <th>Client</th>
+            <th>Plan</th>
+            <th>Statut</th>
+            <th>Période</th>
+            <th>Stripe Sub ID</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var item in Model.Subscriptions)
+    {
+        <tr>
+            <td><code>@item.SubscriptionCode</code></td>
+            <td>@item.AppName</td>
+            <td>@item.CustomerCode</td>
+            <td>@item.PlanCode</td>
+            <td>@item.Status</td>
+            <td>@item.Period</td>
+            <td><small>@item.StripeSubscriptionId</small></td>
+        </tr>
+    }
+    </tbody>
+</table>

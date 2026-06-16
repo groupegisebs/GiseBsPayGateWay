@@ -1,0 +1,29 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+
+# Logs
+logs/
+*.log
+
+# User-specific
+*.user
+*.suo
+.vs/
+
+# Secrets
+appsettings.Production.json
+appsettings.Local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+
+# EF
+*.db

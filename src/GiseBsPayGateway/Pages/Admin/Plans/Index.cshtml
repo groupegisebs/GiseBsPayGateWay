@@ -1,0 +1,39 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.Plans.IndexModel
+@{
+    ViewData["Title"] = "Plans tarifaires";
+    Layout = "_Layout";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Plans tarifaires</h1>
+    <a asp-page="Create" class="btn btn-primary">Nouveau plan</a>
+</div>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Produit</th>
+            <th>Code plan</th>
+            <th>Nom</th>
+            <th>Montant</th>
+            <th>Intervalle</th>
+            <th>Stripe Price ID</th>
+            <th>Actif</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var item in Model.Plans)
+    {
+        <tr>
+            <td>@item.ProductName</td>
+            <td><code>@item.PlanCode</code></td>
+            <td>@item.Name</td>
+            <td>@item.Amount @item.Currency.ToUpper()</td>
+            <td>@item.BillingInterval</td>
+            <td><small>@item.StripePriceId</small></td>
+            <td>@(item.IsActive ? "Oui" : "Non")</td>
+        </tr>
+    }
+    </tbody>
+</table>

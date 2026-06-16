@@ -1,0 +1,86 @@
+using System.ComponentModel.DataAnnotations;
+using GiseBsPayGateway.Data;
+using GiseBsPayGateway.Entities;
+using GiseBsPayGateway.Enums;
+using GiseBsPayGateway.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.EntityFrameworkCore;
+
+namespace GiseBsPayGateway.Pages.Admin.Plans;
+
+public class CreateModel : PageModel
+{
+    private readonly ApplicationDbContext _db;
+    private readonly IAuditService _auditService;
+
+    public CreateModel(ApplicationDbContext db, IAuditService auditService)
+    {
+        _db = db;
+        _auditService = auditService;
+    }
+
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public SelectList Products { get; private set; } = null!;
+
+    public class InputModel
+    {
+        [Required, Display(Name = "Produit")]
+        public Guid ProductId { get; set; }
+
+        [Required, MaxLength(50), Display(Name = "Code plan")]
+        public string PlanCode { get; set; } = string.Empty;
+
+        [Required, MaxLength(200), Display(Name = "Nom")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required, Range(0.01, 999999), Display(Name = "Montant")]
+        public decimal Amount { get; set; }
+
+        [Required, MaxLength(3), Display(Name = "Devise")]
+        public string Currency { get; set; } = "eur";
+
+        [Required, Display(Name = "Intervalle")]
+        public BillingInterval BillingInterval { get; set; }
+    }
+
+    public async Task OnGetAsync(CancellationToken cancellationToken)
+    {
+        Products = new SelectList(
+            await _db.Products.Include(x => x.ClientApplication).Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(cancellationToken),
+            nameof(Product.Id),
+            nameof(Product.Name));
+    }
+
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
+    {
+        Products = new SelectList(
+            await _db.Products.Include(x => x.ClientApplication).Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(cancellationToken),
+            nameof(Product.Id),
+            nameof(Product.Name));
+
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        var plan = new PricingPlan
+        {
+            ProductId = Input.ProductId,
+            PlanCode = Input.PlanCode.ToUpperInvariant(),
+            Name = Input.Name,
+            Amount = Input.Amount,
+            Currency = Input.Currency.ToLowerInvariant(),
+            BillingInterval = Input.BillingInterval,
+            IsActive = true
+        };
+
+        _db.PricingPlans.Add(plan);
+        await _db.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync("PricingPlanCreated", nameof(PricingPlan), plan.Id.ToString(), true, plan.PlanCode, userName: User.Identity?.Name);
+        return RedirectToPage("Index");
+    }
+}

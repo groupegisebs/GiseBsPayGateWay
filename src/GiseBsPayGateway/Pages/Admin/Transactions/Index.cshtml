@@ -1,0 +1,38 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.Transactions.IndexModel
+@{
+    ViewData["Title"] = "Transactions";
+    Layout = "_Layout";
+}
+
+<h1 class="mb-4">Historique des paiements</h1>
+
+<table class="table table-striped table-sm">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Code paiement</th>
+            <th>Application</th>
+            <th>Client</th>
+            <th>Produit</th>
+            <th>Montant</th>
+            <th>Statut</th>
+            <th>Payé le</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var item in Model.Transactions)
+    {
+        <tr>
+            <td>@item.CreatedAt.ToString("g")</td>
+            <td><code>@item.PaymentCode</code></td>
+            <td>@item.AppName</td>
+            <td>@item.CustomerCode</td>
+            <td>@item.ProductCode</td>
+            <td>@item.Amount @item.Currency.ToUpper()</td>
+            <td><span class="badge bg-secondary">@item.Status</span></td>
+            <td>@(item.PaidAt?.ToString("g") ?? "-")</td>
+        </tr>
+    }
+    </tbody>
+</table>

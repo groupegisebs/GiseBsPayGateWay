@@ -1,0 +1,62 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Tableau de bord";
+    Layout = "_Layout";
+}
+
+<h1 class="mb-4">Tableau de bord</h1>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card text-bg-success">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2">Revenus totaux</h6>
+                <h3 class="card-title">@Model.Stats.TotalRevenue.ToString("C")</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-primary">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2">Paiements réussis</h6>
+                <h3 class="card-title">@Model.Stats.SuccessfulPayments</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-danger">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2">Paiements échoués</h6>
+                <h3 class="card-title">@Model.Stats.FailedPayments</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-bg-info">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2">Abonnements actifs</h6>
+                <h3 class="card-title">@Model.Stats.ActiveSubscriptions</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5>Applications clientes</h5>
+                <p class="display-6">@Model.Stats.ClientApplications</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5>Paiements en attente</h5>
+                <p class="display-6">@Model.Stats.PendingPayments</p>
+            </div>
+        </div>
+    </div>
+</div>

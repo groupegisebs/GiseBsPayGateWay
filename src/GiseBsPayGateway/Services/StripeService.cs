@@ -1,0 +1,196 @@
+using GiseBsPayGateway.Data;
+using GiseBsPayGateway.Entities;
+using GiseBsPayGateway.Enums;
+using Microsoft.EntityFrameworkCore;
+using Stripe;
+using Stripe.Checkout;
+using ProductEntity = GiseBsPayGateway.Entities.Product;
+using CustomerEntity = GiseBsPayGateway.Entities.Customer;
+
+namespace GiseBsPayGateway.Services;
+
+public class StripeService : IStripeService
+{
+    private readonly ApplicationDbContext _db;
+    private readonly ILogger<StripeService> _logger;
+
+    public StripeService(ApplicationDbContext db, ILogger<StripeService> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
+
+    private async Task ConfigureStripeAsync(CancellationToken cancellationToken)
+    {
+        var settings = await _db.StripeSettings.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
+        {
+            throw new InvalidOperationException("Stripe n'est pas configuré. Configurez les clés dans le dashboard admin.");
+        }
+
+        StripeConfiguration.ApiKey = settings.SecretKey;
+    }
+
+    public async Task<string> EnsureStripeProductAsync(ProductEntity product, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(product.StripeProductId))
+        {
+            return product.StripeProductId;
+        }
+
+        await ConfigureStripeAsync(cancellationToken);
+        var service = new ProductService();
+        var stripeProduct = await service.CreateAsync(new ProductCreateOptions
+        {
+            Name = product.Name,
+            Description = product.Description,
+            Metadata = new Dictionary<string, string>
+            {
+                ["product_code"] = product.ProductCode,
+                ["client_app_id"] = product.ClientApplicationId.ToString()
+            }
+        }, cancellationToken: cancellationToken);
+
+        product.StripeProductId = stripeProduct.Id;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        return stripeProduct.Id;
+    }
+
+    public async Task<string> EnsureStripePriceAsync(PricingPlan plan, string stripeProductId, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
+        {
+            return plan.StripePriceId;
+        }
+
+        await ConfigureStripeAsync(cancellationToken);
+        var service = new PriceService();
+        var options = new PriceCreateOptions
+        {
+            Product = stripeProductId,
+            UnitAmount = (long)(plan.Amount * 100),
+            Currency = plan.Currency.ToLowerInvariant(),
+            Metadata = new Dictionary<string, string>
+            {
+                ["plan_code"] = plan.PlanCode
+            }
+        };
+
+        if (plan.BillingInterval != BillingInterval.OneTime)
+        {
+            options.Recurring = new PriceRecurringOptions
+            {
+                Interval = plan.BillingInterval == BillingInterval.Yearly ? "year" : "month"
+            };
+        }
+
+        var stripePrice = await service.CreateAsync(options, cancellationToken: cancellationToken);
+        plan.StripePriceId = stripePrice.Id;
+        plan.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        return stripePrice.Id;
+    }
+
+    public async Task<string?> GetOrCreateStripeCustomerAsync(CustomerEntity customer, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(customer.StripeCustomerId))
+        {
+            return customer.StripeCustomerId;
+        }
+
+        await ConfigureStripeAsync(cancellationToken);
+        var service = new CustomerService();
+        var stripeCustomer = await service.CreateAsync(new CustomerCreateOptions
+        {
+            Email = customer.Email,
+            Name = customer.FullName,
+            Metadata = new Dictionary<string, string>
+            {
+                ["customer_code"] = customer.CustomerCode,
+                ["client_app_id"] = customer.ClientApplicationId.ToString()
+            }
+        }, cancellationToken: cancellationToken);
+
+        customer.StripeCustomerId = stripeCustomer.Id;
+        customer.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        return stripeCustomer.Id;
+    }
+
+    public async Task<(string SessionId, string Url)> CreateCheckoutSessionAsync(
+        PaymentTransaction payment,
+        CustomerEntity customer,
+        PricingPlan plan,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken = default)
+    {
+        await ConfigureStripeAsync(cancellationToken);
+
+        var stripeProductId = await EnsureStripeProductAsync(payment.Product, cancellationToken);
+        var stripePriceId = await EnsureStripePriceAsync(plan, stripeProductId, cancellationToken);
+        var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken);
+
+        var sessionService = new SessionService();
+        var options = new SessionCreateOptions
+        {
+            Mode = plan.BillingInterval == BillingInterval.OneTime ? "payment" : "subscription",
+            Customer = stripeCustomerId,
+            SuccessUrl = successUrl,
+            CancelUrl = cancelUrl,
+            LineItems =
+            [
+                new SessionLineItemOptions
+                {
+                    Price = stripePriceId,
+                    Quantity = 1
+                }
+            ],
+            Metadata = new Dictionary<string, string>
+            {
+                ["payment_code"] = payment.PaymentCode,
+                ["customer_code"] = customer.CustomerCode,
+                ["product_code"] = payment.Product.ProductCode,
+                ["plan_code"] = plan.PlanCode
+            }
+        };
+
+        if (plan.BillingInterval != BillingInterval.OneTime)
+        {
+            options.SubscriptionData = new SessionSubscriptionDataOptions
+            {
+                Metadata = new Dictionary<string, string>
+                {
+                    ["payment_code"] = payment.PaymentCode
+                }
+            };
+        }
+
+        var session = await sessionService.CreateAsync(options, cancellationToken: cancellationToken);
+        _logger.LogInformation("Session Stripe créée {SessionId} pour paiement {PaymentCode}", session.Id, payment.PaymentCode);
+        return (session.Id, session.Url ?? string.Empty);
+    }
+
+    public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)
+    {
+        await ConfigureStripeAsync(cancellationToken);
+        var service = new SubscriptionService();
+
+        if (cancelImmediately)
+        {
+            await service.CancelAsync(stripeSubscriptionId, cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await service.UpdateAsync(stripeSubscriptionId, new SubscriptionUpdateOptions
+            {
+                CancelAtPeriodEnd = true
+            }, cancellationToken: cancellationToken);
+        }
+    }
+}

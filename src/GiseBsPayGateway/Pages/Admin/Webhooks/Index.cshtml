@@ -1,0 +1,34 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.Webhooks.IndexModel
+@{
+    ViewData["Title"] = "Webhooks Stripe";
+    Layout = "_Layout";
+}
+
+<h1 class="mb-4">Événements webhook Stripe</h1>
+
+<table class="table table-striped table-sm">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Event ID</th>
+            <th>Type</th>
+            <th>Statut</th>
+            <th>Traité le</th>
+            <th>Erreur</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var item in Model.Events)
+    {
+        <tr>
+            <td>@item.CreatedAt.ToString("g")</td>
+            <td><small>@item.StripeEventId</small></td>
+            <td>@item.EventType</td>
+            <td>@item.ProcessingStatus</td>
+            <td>@(item.ProcessedAt?.ToString("g") ?? "-")</td>
+            <td>@item.ErrorMessage</td>
+        </tr>
+    }
+    </tbody>
+</table>
