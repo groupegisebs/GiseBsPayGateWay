@@ -64,7 +64,7 @@ X-Api-Key: gbsk_votre_cle_api</code></pre>
         <h5 class="mt-4">Étapes côté application cliente</h5>
         <ol>
             <li>Créer l'application dans <a asp-page="/Admin/Applications/Index">Applications</a> et générer une clé API.</li>
-            <li>Créer le produit et le plan dans <a asp-page="/Admin/Products/Index">Produits</a> / <a asp-page="/Admin/Plans/Index">Plans</a>.</li>
+            <li>Créer le produit et le plan dans <a asp-page="/Admin/Products/Index">Produits</a> / <a asp-page="/Admin/Plans/Index">Plans</a> (les plans sont immuables : désactiver + recréer pour changer un tarif).</li>
             <li>Appeler <code>POST /api/checkout/session</code> depuis le backend de l'app (jamais depuis le navigateur avec la clé secrète).</li>
             <li>Rediriger l'utilisateur vers l'URL Checkout retournée.</li>
             <li>Après paiement, vérifier le statut avec <code>GET /api/payments/{paymentCode}</code>.</li>

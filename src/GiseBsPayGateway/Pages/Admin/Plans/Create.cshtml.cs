@@ -67,10 +67,20 @@ public class CreateModel : PageModel
             return Page();
         }
 
+        var planCode = Input.PlanCode.ToUpperInvariant();
+        if (await _db.PricingPlans.AnyAsync(
+                x => x.ProductId == Input.ProductId && x.PlanCode == planCode && x.IsActive,
+                cancellationToken))
+        {
+            ModelState.AddModelError(nameof(Input.PlanCode),
+                "Un plan actif avec ce code existe déjà pour ce produit. Désactivez-le avant d'en créer un nouveau avec le même code.");
+            return Page();
+        }
+
         var plan = new PricingPlan
         {
             ProductId = Input.ProductId,
-            PlanCode = Input.PlanCode.ToUpperInvariant(),
+            PlanCode = planCode,
             Name = Input.Name,
             Amount = Input.Amount,
             Currency = Input.Currency.ToLowerInvariant(),

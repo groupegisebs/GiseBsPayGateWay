@@ -57,7 +57,9 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
 
         builder.Entity<PricingPlan>(e =>
         {
-            e.HasIndex(x => new { x.ProductId, x.PlanCode }).IsUnique();
+            e.HasIndex(x => new { x.ProductId, x.PlanCode })
+                .IsUnique()
+                .HasFilter("\"IsActive\" = true");
             e.Property(x => x.PlanCode).HasMaxLength(50);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
