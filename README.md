@@ -238,6 +238,16 @@ Environment=ASPNETCORE_URLS=http://0.0.0.0:7843
 WantedBy=multi-user.target
 ```
 
+> **Type d'adresse (`ASPNETCORE_URLS`)**
+>
+> | Adresse | Écoute sur | Usage |
+> |---------|------------|-------|
+> | `http://127.0.0.1:7843` | Loopback IPv4 uniquement | NPM installé **nativement** sur le même serveur |
+> | `http://0.0.0.0:7843` | Toutes les interfaces réseau | **Recommandé** si NPM tourne en Docker sur le même hôte |
+> | `http://localhost:7843` | Équivalent loopback (127.0.0.1 / ::1) | Développement local uniquement |
+>
+> En production derrière NPM, préférez `0.0.0.0` : NPM (souvent conteneurisé) accède à l'hôte via son IP, pas via `127.0.0.1`.
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable gisebs-pay-gateway
@@ -259,7 +269,9 @@ Dans l'interface NPM (généralement port 81) :
 1. **Hosts → Proxy Hosts → Add Proxy Host**
 2. **Domain Names** : `pay.gisebs.com`
 3. **Scheme** : `http`
-4. **Forward Hostname/IP** : IP du serveur (ou `127.0.0.1`)
+4. **Forward Hostname/IP** :
+   - NPM **natif** (même machine) → `127.0.0.1`
+   - NPM **Docker** → IP du serveur (`hostname -I`) ou `host.docker.internal` (selon config)
 5. **Forward Port** : `7843`
 6. **Block Common Exploits** : activé
 7. **Websockets Support** : activé (optionnel)
