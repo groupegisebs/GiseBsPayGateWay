@@ -5,29 +5,43 @@
     Layout = "_Layout";
 }
 
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="card shadow">
+<div class="row justify-content-center align-items-center" style="min-height: 60vh;">
+    <div class="col-md-5 col-lg-4">
+        <div class="card gisebs-card-login">
+            <div class="gisebs-card-login-header">
+                <h2>GISEBS Pay Gateway</h2>
+                <p>Espace administration</p>
+            </div>
             <div class="card-body p-4">
-                <h2 class="mb-4">Connexion admin</h2>
                 <form method="post">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
                         <label asp-for="Input.Email" class="form-label"></label>
-                        <input asp-for="Input.Email" class="form-control" />
+                        <input asp-for="Input.Email" class="form-control" autocomplete="username" />
                         <span asp-validation-for="Input.Email" class="text-danger"></span>
                     </div>
                     <div class="mb-3">
                         <label asp-for="Input.Password" class="form-label"></label>
-                        <input asp-for="Input.Password" class="form-control" />
+                        <input asp-for="Input.Password" class="form-control" autocomplete="current-password" />
                         <span asp-validation-for="Input.Password" class="text-danger"></span>
                     </div>
                     <div class="mb-3 form-check">
                         <input asp-for="Input.RememberMe" class="form-check-input" />
                         <label asp-for="Input.RememberMe" class="form-check-label"></label>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Se connecter</button>
+                    <button type="submit" class="btn btn-primary w-100 py-2">Se connecter</button>
                 </form>
+
+                @if (Model.ShowTestCredentials)
+                {
+                    <div class="gisebs-test-hint mt-4 p-3">
+                        <strong>Compte test</strong>
+                        <div class="mt-1">
+                            Email : <code>@Model.TestEmail</code><br />
+                            Mot de passe : <code>@Model.TestPassword</code>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     </div>

@@ -1,6 +1,5 @@
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.Entities;
-using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Options;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Identity;
@@ -23,19 +22,8 @@ public static class DbSeeder
 
         await db.Database.MigrateAsync();
 
-        if (!await userManager.Users.AnyAsync())
-        {
-            var admin = new AdminUser
-            {
-                UserName = seedOptions.AdminEmail,
-                Email = seedOptions.AdminEmail,
-                EmailConfirmed = true,
-                FullName = "Administrateur GISEBS",
-                IsActive = true
-            };
-            await userManager.CreateAsync(admin, seedOptions.AdminPassword);
-            await auditService.LogAsync("AdminUserCreated", nameof(AdminUser), admin.Id, true, admin.Email);
-        }
+        await EnsureAdminUserAsync(userManager, auditService, seedOptions.AdminEmail, seedOptions.AdminPassword, "Administrateur GISEBS");
+        await EnsureAdminUserAsync(userManager, auditService, seedOptions.TestEmail, seedOptions.TestPassword, "Compte test GISEBS");
 
         if (!await db.ClientApplications.AnyAsync())
         {
@@ -85,6 +73,34 @@ public static class DbSeeder
             }
 
             await db.SaveChangesAsync();
+        }
+    }
+
+    private static async Task EnsureAdminUserAsync(
+        UserManager<AdminUser> userManager,
+        IAuditService auditService,
+        string email,
+        string password,
+        string fullName)
+    {
+        if (await userManager.FindByEmailAsync(email) is not null)
+        {
+            return;
+        }
+
+        var user = new AdminUser
+        {
+            UserName = email,
+            Email = email,
+            EmailConfirmed = true,
+            FullName = fullName,
+            IsActive = true
+        };
+
+        var result = await userManager.CreateAsync(user, password);
+        if (result.Succeeded)
+        {
+            await auditService.LogAsync("AdminUserCreated", nameof(AdminUser), user.Id, true, email);
         }
     }
 }

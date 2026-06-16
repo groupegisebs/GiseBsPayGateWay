@@ -1,5 +1,26 @@
+/* GISEBS Pay Gateway — thème rouge magenta professionnel */
+
+:root {
+  --gisebs-magenta: #9e1b5c;
+  --gisebs-magenta-dark: #7a1247;
+  --gisebs-magenta-darker: #5c0d35;
+  --gisebs-magenta-light: #c43d7a;
+  --gisebs-magenta-soft: #f3e4ec;
+  --gisebs-magenta-muted: #b892a4;
+  --gisebs-surface: #faf8f9;
+  --gisebs-card-border: rgba(158, 27, 92, 0.12);
+
+  --bs-primary: #9e1b5c;
+  --bs-primary-rgb: 158, 27, 92;
+  --bs-link-color: #9e1b5c;
+  --bs-link-hover-color: #7a1247;
+  --bs-focus-ring-color: rgba(158, 27, 92, 0.25);
+}
+
 html {
   font-size: 14px;
+  position: relative;
+  min-height: 100%;
 }
 
 @media (min-width: 768px) {
@@ -8,24 +29,197 @@ html {
   }
 }
 
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
-}
-
 body {
   margin-bottom: 60px;
+  background-color: var(--gisebs-surface);
+  color: #2d2a2c;
 }
 
-.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
-  color: var(--bs-secondary-color);
-  text-align: end;
+/* Navbar */
+.gisebs-navbar {
+  background: linear-gradient(135deg, var(--gisebs-magenta-darker) 0%, var(--gisebs-magenta) 55%, var(--gisebs-magenta-light) 100%);
+  box-shadow: 0 2px 12px rgba(92, 13, 53, 0.25);
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
 }
 
-.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
-  text-align: start;
+.gisebs-navbar .navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.gisebs-navbar .nav-link {
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.75rem !important;
+  border-radius: 0.375rem;
+  transition: background 0.15s ease;
+}
+
+.gisebs-navbar .nav-link:hover,
+.gisebs-navbar .nav-link.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff !important;
+}
+
+/* Boutons */
+.btn-primary {
+  --bs-btn-bg: var(--gisebs-magenta);
+  --bs-btn-border-color: var(--gisebs-magenta);
+  --bs-btn-hover-bg: var(--gisebs-magenta-dark);
+  --bs-btn-hover-border-color: var(--gisebs-magenta-dark);
+  --bs-btn-active-bg: var(--gisebs-magenta-darker);
+  --bs-btn-active-border-color: var(--gisebs-magenta-darker);
+  --bs-btn-focus-shadow-rgb: 158, 27, 92;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--gisebs-magenta);
+  --bs-btn-border-color: var(--gisebs-magenta);
+  --bs-btn-hover-bg: var(--gisebs-magenta);
+  --bs-btn-hover-border-color: var(--gisebs-magenta);
+  --bs-btn-active-bg: var(--gisebs-magenta-dark);
+  --bs-btn-active-border-color: var(--gisebs-magenta-dark);
+}
+
+.btn:focus,
+.btn:active:focus,
+.form-control:focus,
+.form-check-input:focus {
+  box-shadow: 0 0 0 0.2rem rgba(158, 27, 92, 0.2);
+  border-color: var(--gisebs-magenta-light);
+}
+
+.form-check-input:checked {
+  background-color: var(--gisebs-magenta);
+  border-color: var(--gisebs-magenta);
+}
+
+/* Cartes */
+.card {
+  border: 1px solid var(--gisebs-card-border);
+  box-shadow: 0 1px 4px rgba(45, 42, 44, 0.06);
+}
+
+.gisebs-card-login {
+  border: none;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(92, 13, 53, 0.12);
+}
+
+.gisebs-card-login-header {
+  background: linear-gradient(135deg, var(--gisebs-magenta-darker), var(--gisebs-magenta));
+  color: #fff;
+  padding: 2rem;
+  text-align: center;
+}
+
+.gisebs-card-login-header h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.gisebs-card-login-header p {
+  opacity: 0.9;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+/* Stat cards dashboard */
+.stat-card {
+  border: none;
+  border-radius: 0.625rem;
+  color: #fff;
+}
+
+.stat-card .card-subtitle {
+  opacity: 0.9;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-card .card-title {
+  font-weight: 700;
+  margin: 0;
+}
+
+.stat-revenue { background: linear-gradient(135deg, #2d6a4f, #40916c); }
+.stat-success { background: linear-gradient(135deg, var(--gisebs-magenta-dark), var(--gisebs-magenta)); }
+.stat-failed  { background: linear-gradient(135deg, #9d0208, #d00000); }
+.stat-subs    { background: linear-gradient(135deg, #5a189a, #7b2cbf); }
+
+.stat-neutral {
+  border-left: 4px solid var(--gisebs-magenta);
+}
+
+.stat-neutral .display-6 {
+  color: var(--gisebs-magenta);
+  font-weight: 700;
+}
+
+/* Page d'accueil */
+.gisebs-hero {
+  background: linear-gradient(160deg, var(--gisebs-magenta-soft) 0%, #fff 45%);
+  border-radius: 1rem;
+  padding: 3rem 2rem;
+  border: 1px solid var(--gisebs-card-border);
+}
+
+.gisebs-hero h1 {
+  color: var(--gisebs-magenta-darker);
+  font-weight: 800;
+}
+
+/* Onglets guide */
+.nav-tabs .nav-link.active {
+  color: var(--gisebs-magenta);
+  border-color: #dee2e6 #dee2e6 #fff;
+  font-weight: 600;
+}
+
+.nav-tabs .nav-link {
+  color: #6c757d;
+}
+
+.nav-tabs .nav-link:hover {
+  color: var(--gisebs-magenta-dark);
+  border-color: transparent;
+}
+
+/* Badges & liens */
+.badge.bg-secondary {
+  background-color: var(--gisebs-magenta-muted) !important;
+}
+
+a {
+  color: var(--gisebs-magenta);
+}
+
+a:hover {
+  color: var(--gisebs-magenta-dark);
+}
+
+.text-bg-primary {
+  background-color: var(--gisebs-magenta) !important;
+}
+
+.alert-info {
+  background-color: var(--gisebs-magenta-soft);
+  border-color: rgba(158, 27, 92, 0.2);
+  color: var(--gisebs-magenta-darker);
+}
+
+.gisebs-test-hint {
+  background: var(--gisebs-magenta-soft);
+  border: 1px dashed rgba(158, 27, 92, 0.35);
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.gisebs-test-hint code {
+  color: var(--gisebs-magenta-dark);
+  font-weight: 600;
 }

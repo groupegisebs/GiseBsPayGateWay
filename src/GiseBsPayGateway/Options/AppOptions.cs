@@ -24,4 +24,6 @@ public class SeedOptions
 
     public string AdminEmail { get; set; } = "admin@gisebs.com";
     public string AdminPassword { get; set; } = "ChangeMe123!";
+    public string TestEmail { get; set; } = "test@gisebs.com";
+    public string TestPassword { get; set; } = "Test123!";
 }
