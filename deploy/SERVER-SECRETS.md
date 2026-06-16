@@ -1,37 +1,23 @@
 # Secrets serveur — GISEBS Pay Gateway
 
-Les secrets sensibles **ne doivent pas** être dans GitHub. Seuls SSH et la connection string PostgreSQL passent par les secrets GitHub Actions (pour déployer).
+## Source principale : GitHub Actions
 
-**Stripe, JWT et autres clés** vivent dans un fichier **sur le serveur uniquement**.
+Les secrets Stripe et JWT sont définis dans **GitHub** (voir [GITHUB-SECRETS.md](./GITHUB-SECRETS.md)).
 
----
+À chaque déploiement, le workflow écrit automatiquement :
 
-## Où sont stockés les secrets ?
+```
+/opt/apps/gisebs-pay-gateway/secrets.json   ← Stripe + JWT (chmod 600)
+/opt/apps/gisebs-pay-gateway/app/app.env    ← connection string PostgreSQL
+```
 
-| Secret | Où | GitHub ? |
-|--------|-----|----------|
-| Clé SSH déploiement | Secret GitHub `SSH_PRIVATE_KEY_UBUNTU1` ou `GISEBSPAY_SSH_PRIVATE_KEY` | Oui (Actions) |
-| Connection string PostgreSQL | Secret GitHub `GISEBSPAY_CONNECTION_STRING` | Oui (Actions) → copié dans `app.env` sur le serveur |
-| **Stripe** (pk, sk, webhook) | **`/opt/apps/gisebs-pay-gateway/secrets.json`** | **Non** |
-| **JWT** (optionnel) | Même fichier `secrets.json` | **Non** |
-| Mots de passe admin | Base PostgreSQL (seed initial) | Non |
+**Vous n'avez plus besoin** de créer `secrets.json` manuellement si le déploiement GitHub Actions est configuré.
 
 ---
 
-## Étape 1 — Secrets GitHub (déploiement uniquement)
+## Secours manuel (SSH)
 
-Voir [GITHUB-SECRETS.md](./GITHUB-SECRETS.md) :
-
-1. `SSH_PRIVATE_KEY_UBUNTU1` (org) **ou** `GISEBSPAY_SSH_PRIVATE_KEY`
-2. `GISEBSPAY_CONNECTION_STRING` avec `Database=gisebs_pay_gateway`
-
-**Ne mettez pas les clés Stripe dans GitHub.**
-
----
-
-## Étape 2 — Fichier secrets sur le serveur (une fois)
-
-Connectez-vous en SSH :
+Si vous devez corriger sans redéployer :
 
 ```bash
 ssh ubuntu@51.79.53.197

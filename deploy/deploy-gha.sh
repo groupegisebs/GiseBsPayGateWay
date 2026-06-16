@@ -75,6 +75,42 @@ ENV_FILE="$(mktemp)"
 scp "${SCP_OPTS[@]}" "${ENV_FILE}" "${SSH_TARGET}:/tmp/${SERVICE_NAME}.app.env"
 rm -f "${ENV_FILE}"
 
+if [[ -n "${STRIPE_SECRET_KEY:-}" ]]; then
+  SECRETS_JSON="$(mktemp)"
+  export STRIPE_PUBLISHABLE_KEY="${STRIPE_PUBLISHABLE_KEY:-}"
+  export STRIPE_SECRET_KEY
+  export STRIPE_WEBHOOK_SECRET="${STRIPE_WEBHOOK_SECRET:-}"
+  export STRIPE_LIVE_MODE="${STRIPE_LIVE_MODE:-false}"
+  export JWT_SECRET_KEY="${JWT_SECRET_KEY:-}"
+  python3 <<'PY' > "${SECRETS_JSON}"
+import json, os
+
+live = os.environ.get("STRIPE_LIVE_MODE", "false").strip().lower() in ("1", "true", "yes")
+print(json.dumps({
+    "Stripe": {
+        "PublishableKey": os.environ.get("STRIPE_PUBLISHABLE_KEY", ""),
+        "SecretKey": os.environ["STRIPE_SECRET_KEY"],
+        "WebhookSecret": os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        "IsLiveMode": live,
+    },
+    "Jwt": {
+        "SecretKey": os.environ.get("JWT_SECRET_KEY", ""),
+    },
+}, indent=2))
+PY
+  scp "${SCP_OPTS[@]}" "${SECRETS_JSON}" "${SSH_TARGET}:/tmp/${SERVICE_NAME}.secrets.json"
+  rm -f "${SECRETS_JSON}"
+  ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s <<REMOTE_SECRETS
+set -eu
+sudo mv "/tmp/${SERVICE_NAME}.secrets.json" "${APP_ROOT}/secrets.json"
+sudo chmod 600 "${APP_ROOT}/secrets.json"
+sudo chown ${SSH_USER}:${SSH_USER} "${APP_ROOT}/secrets.json"
+echo "secrets.json déployé dans ${APP_ROOT}/secrets.json"
+REMOTE_SECRETS
+else
+  echo "Secrets Stripe/JWT non fournis — secrets.json inchangé sur le serveur."
+fi
+
 ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s <<REMOTE_DEPLOY
 set -eu
 PROD_SETTINGS='${APP_DIR}/appsettings.Production.json'
