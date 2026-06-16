@@ -26,6 +26,10 @@ public class CreateModel : PageModel
 
     public SelectList Products { get; private set; } = null!;
 
+    public bool IsCopyMode { get; private set; }
+
+    public string? CopySourcePlanCode { get; private set; }
+
     public class InputModel
     {
         [Required, Display(Name = "Produit")]
@@ -47,20 +51,44 @@ public class CreateModel : PageModel
         public BillingInterval BillingInterval { get; set; }
     }
 
-    public async Task OnGetAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetAsync(Guid? copyFrom, CancellationToken cancellationToken)
     {
-        Products = new SelectList(
-            await _db.Products.Include(x => x.ClientApplication).Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(cancellationToken),
-            nameof(Product.Id),
-            nameof(Product.Name));
+        Products = await LoadProductsAsync(cancellationToken);
+
+        if (copyFrom is null)
+        {
+            return Page();
+        }
+
+        var source = await _db.PricingPlans.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == copyFrom.Value, cancellationToken);
+
+        if (source is null)
+        {
+            return NotFound();
+        }
+
+        IsCopyMode = true;
+        CopySourcePlanCode = source.PlanCode;
+
+        var suggestedPlanCode = await ResolveCopyPlanCodeAsync(source.ProductId, source.PlanCode, cancellationToken);
+
+        Input = new InputModel
+        {
+            ProductId = source.ProductId,
+            PlanCode = suggestedPlanCode,
+            Name = suggestedPlanCode == source.PlanCode ? source.Name : $"{source.Name} (copie)",
+            Amount = source.Amount,
+            Currency = source.Currency,
+            BillingInterval = source.BillingInterval
+        };
+
+        return Page();
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
-        Products = new SelectList(
-            await _db.Products.Include(x => x.ClientApplication).Where(x => x.IsActive).OrderBy(x => x.Name).ToListAsync(cancellationToken),
-            nameof(Product.Id),
-            nameof(Product.Name));
+        Products = await LoadProductsAsync(cancellationToken);
 
         if (!ModelState.IsValid)
         {
@@ -92,5 +120,43 @@ public class CreateModel : PageModel
         await _db.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync("PricingPlanCreated", nameof(PricingPlan), plan.Id.ToString(), true, plan.PlanCode, userName: User.Identity?.Name);
         return RedirectToPage("Index");
+    }
+
+    private async Task<SelectList> LoadProductsAsync(CancellationToken cancellationToken)
+    {
+        var products = await _db.Products.Include(x => x.ClientApplication)
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        return new SelectList(products, nameof(Product.Id), nameof(Product.Name));
+    }
+
+    private async Task<string> ResolveCopyPlanCodeAsync(Guid productId, string planCode, CancellationToken cancellationToken)
+    {
+        if (!await _db.PricingPlans.AnyAsync(
+                x => x.ProductId == productId && x.PlanCode == planCode && x.IsActive,
+                cancellationToken))
+        {
+            return planCode;
+        }
+
+        for (var i = 2; i < 100; i++)
+        {
+            var candidate = $"{planCode}-V{i}";
+            if (candidate.Length > 50)
+            {
+                candidate = candidate[..50];
+            }
+
+            if (!await _db.PricingPlans.AnyAsync(
+                    x => x.ProductId == productId && x.PlanCode == candidate && x.IsActive,
+                    cancellationToken))
+            {
+                return candidate;
+            }
+        }
+
+        return $"{planCode}-COPY-{DateTime.UtcNow:yyyyMMddHHmm}"[..50];
     }
 }

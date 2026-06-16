@@ -13,7 +13,7 @@
 <div class="alert alert-info py-2 mb-4">
     Les plans tarifaires sont <strong>immuables</strong> : ils ne peuvent pas être modifiés.
     Pour changer un tarif, <strong>désactivez</strong> l'ancien plan puis <strong>copiez-le</strong> ou créez-en un nouveau.
-    La copie d'un plan inactif reprend le même code et est <strong>activée</strong> automatiquement.
+    <strong>Copier</strong> ouvre le formulaire de création prérempli ; le nouveau plan sera <strong>activé</strong> à l'enregistrement.
 </div>
 
 @if (TempData["PlanMessage"] is string message)
@@ -61,12 +61,10 @@
             </td>
             <td><small>@item.CreatedAt.ToString("g")</small></td>
             <td class="text-nowrap">
-                <form method="post" asp-page-handler="Copy" class="d-inline me-1">
-                    <input type="hidden" name="planId" value="@item.Id" />
-                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Créer une copie active">
-                        Copier
-                    </button>
-                </form>
+                <a asp-page="Create" asp-route-copyFrom="@item.Id"
+                   class="btn btn-sm btn-outline-primary me-1" title="Ouvrir en mode création">
+                    Copier
+                </a>
                 <form method="post" asp-page-handler="ToggleActive" class="d-inline">
                     <input type="hidden" name="planId" value="@item.Id" />
                     @if (item.IsActive)
