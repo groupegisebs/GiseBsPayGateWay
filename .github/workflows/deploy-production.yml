@@ -103,11 +103,16 @@ jobs:
 
           missing=0
           if [ -z "$SSH_PRIVATE_KEY" ]; then
-            echo "::error::Clé SSH manquante. Ajoutez GISEBSPAY_SSH_PRIVATE_KEY ou SSH_PRIVATE_KEY_UBUNTU1 au dépôt."
+            echo "::error::Clé SSH manquante."
+            echo "→ Ajoutez le secret GISEBSPAY_SSH_PRIVATE_KEY sur : https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "→ Ou autorisez ce dépôt sur le secret org SSH_PRIVATE_KEY_UBUNTU1 (Settings org → Secrets → Repository access)"
             missing=1
           fi
           if [ -z "$CONNECTION_STRING_RAW" ]; then
-            echo "::error::Connection string manquante. Ajoutez GISEBSPAY_CONNECTION_STRING ou UBUNTU1_CONNECTION_STRING au dépôt."
+            echo "::error::Connection string PostgreSQL manquante."
+            echo "→ Ajoutez GISEBSPAY_CONNECTION_STRING sur : https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "→ Valeur : Host=51.79.53.197;Port=5432;Database=gisebs_pay_gateway;Username=gisedocuser;Password=..."
+            echo "→ Ne pas réutiliser UBUNTU1_CONNECTION_STRING si elle pointe vers une autre base (ex. GiseMailSenderService)."
             missing=1
           fi
           [ "$missing" -eq 0 ] || exit 1
