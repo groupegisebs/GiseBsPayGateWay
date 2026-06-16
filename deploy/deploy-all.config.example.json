@@ -1,0 +1,6 @@
+{
+  "_comment": "Copiez vers deploy/deploy-all.config.json (gitignored). Paramètres du serveur cible.",
+  "ServerHost": "51.79.53.197",
+  "SshUser": "ubuntu",
+  "SshPort": 22
+}

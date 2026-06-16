@@ -1,0 +1,29 @@
+{
+  "_comment": "Copiez vers /opt/apps/gisebs-pay-gateway/app/appsettings.Production.json au premier déploiement. deploy.sh préserve ce fichier ensuite.",
+  "ConnectionStrings": {
+    "_comment": "En production : UBUNTU1_CONNECTION_STRING via app.env (prioritaire sur ce fichier).",
+    "DefaultConnection": "Host=51.79.53.197;Port=5432;Database=gisebs_pay_gateway;Username=gisedocuser;Password=CHANGE_ME"
+  },
+  "Deployment": {
+    "AppName": "GISEBS Pay Gateway",
+    "ServiceName": "gisebs-pay-gateway",
+    "AppRoot": "/opt/apps/gisebs-pay-gateway",
+    "ListenPort": 7843
+  },
+  "Jwt": {
+    "SecretKey": "GENERER-UNE-CLE-ALEATOIRE-DE-64-CARACTERES-MINIMUM"
+  },
+  "Seed": {
+    "AdminEmail": "admin@gisebs.com",
+    "AdminPassword": "CHANGE_ME_STRONG_PASSWORD"
+  },
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft.AspNetCore": "Warning"
+      }
+    }
+  },
+  "AllowedHosts": "*"
+}

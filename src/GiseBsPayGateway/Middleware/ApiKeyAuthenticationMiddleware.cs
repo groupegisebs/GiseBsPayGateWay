@@ -21,6 +21,7 @@ public class ApiKeyAuthenticationMiddleware
     public async Task InvokeAsync(HttpContext context, ApplicationDbContext db, IApiKeyService apiKeyService, IAuditService auditService)
     {
         if (!context.Request.Path.StartsWithSegments("/api") ||
+            context.Request.Path.StartsWithSegments("/health") ||
             context.Request.Path.StartsWithSegments("/api/webhooks/stripe") ||
             context.Request.Path.StartsWithSegments("/api/auth/token"))
         {

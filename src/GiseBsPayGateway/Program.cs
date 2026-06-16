@@ -1,5 +1,6 @@
 using System.Text;
 using AspNetCoreRateLimit;
+using GiseBsPayGateway.Configuration;
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Middleware;
@@ -13,6 +14,12 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Configuration.AddUbuntu1Overrides();
+builder.ApplyListenUrl();
+
+builder.Services.Configure<DeploymentSettings>(
+    builder.Configuration.GetSection(DeploymentSettings.SectionName));
+
 builder.Host.UseSerilog((context, config) =>
 {
     config.ReadFrom.Configuration(context.Configuration)
@@ -25,8 +32,13 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKeyOptions.SectionName));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration[$"{DeploymentSettings.SectionName}:ConnectionString"]
+    ?? throw new InvalidOperationException(
+        "Connection string introuvable. Définissez UBUNTU1_CONNECTION_STRING ou ConnectionStrings:DefaultConnection.");
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddIdentity<AdminUser, IdentityRole>(options =>
     {
@@ -84,6 +96,7 @@ builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 
+builder.Services.AddHealthChecks();
 builder.Services.AddControllers();
 builder.Services.AddRazorPages(options =>
 {
@@ -120,6 +133,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseApiKeyAuthentication();
 
+app.MapHealthChecks("/health");
 app.MapControllers();
 app.MapRazorPages();
 

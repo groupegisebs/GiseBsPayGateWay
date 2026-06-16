@@ -1,0 +1,159 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ubuntu1
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  PROJECT_PATH: src/GiseBsPayGateway/GiseBsPayGateway.csproj
+  DLL_NAME: GiseBsPayGateway.dll
+  DEFAULT_SSH_HOST: "51.79.53.197"
+  DEFAULT_SSH_USER: "ubuntu"
+  DEFAULT_SSH_PORT: "22"
+  DEFAULT_APP_ROOT: "/opt/apps/gisebs-pay-gateway"
+  DEFAULT_SERVICE_NAME: "gisebs-pay-gateway"
+  DEFAULT_LISTEN_PORT: "7843"
+  DEFAULT_APP_NAME: "GISEBS Pay Gateway"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore GiseBsPayGateway.sln
+
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o publish --no-self-contained --no-restore
+
+      - name: Prepare deploy scripts
+        run: chmod +x deploy/deploy-gha.sh deploy/gha-env.sh
+
+      - name: Diagnose secrets (noms acceptés)
+        run: |
+          echo "Dépôt : ${{ github.repository }}"
+          echo ""
+          echo "Secrets SSH (un seul suffit) :"
+          echo "  SSH_PRIVATE_KEY_UBUNTU1    → ${{ secrets.SSH_PRIVATE_KEY_UBUNTU1 != '' && 'OK' || 'manquant' }}"
+          echo "  GISEBSPAY_SSH_PRIVATE_KEY  → ${{ secrets.GISEBSPAY_SSH_PRIVATE_KEY != '' && 'OK' || 'manquant' }}"
+          echo ""
+          echo "Connection string (un seul suffit) :"
+          echo "  UBUNTU1_CONNECTION_STRING    → ${{ secrets.UBUNTU1_CONNECTION_STRING != '' && 'OK' || 'manquant' }}"
+          echo "  GISEBSPAY_CONNECTION_STRING  → ${{ secrets.GISEBSPAY_CONNECTION_STRING != '' && 'OK' || 'manquant' }}"
+          echo ""
+          echo "Host/User : secret, variable, ou défaut workflow (51.79.53.197 / ubuntu)"
+          echo "Guide : https://github.com/${{ github.repository }}/blob/main/deploy/GITHUB-SECRETS.md"
+
+      - name: Load configuration
+        env:
+          KEY_UBUNTU1: ${{ secrets.SSH_PRIVATE_KEY_UBUNTU1 }}
+          KEY_PAY: ${{ secrets.GISEBSPAY_SSH_PRIVATE_KEY }}
+          HOST_VAR: ${{ vars.SSH_HOST_UBUNTU1 }}
+          HOST_SECRET: ${{ secrets.SSH_HOST_UBUNTU1 }}
+          USER_VAR: ${{ vars.SSH_USER_UBUNTU1 }}
+          USER_SECRET: ${{ secrets.SSH_USER_UBUNTU1 }}
+          PORT_VAR: ${{ vars.SSH_PORT_UBUNTU1 }}
+          PORT_SECRET: ${{ secrets.SSH_PORT_UBUNTU1 }}
+          CONN_UBUNTU1: ${{ secrets.UBUNTU1_CONNECTION_STRING }}
+          CONN_PAY: ${{ secrets.GISEBSPAY_CONNECTION_STRING }}
+          APP_ROOT_VAR: ${{ vars.UBUNTU1_APP_ROOT }}
+          APP_ROOT_SECRET: ${{ secrets.UBUNTU1_APP_ROOT }}
+          SERVICE_VAR: ${{ vars.UBUNTU1_SERVICE_NAME }}
+          SERVICE_SECRET: ${{ secrets.UBUNTU1_SERVICE_NAME }}
+          PORT_APP_VAR: ${{ vars.GISEBSPAY_LISTEN_PORT }}
+          PORT_APP_SECRET: ${{ secrets.GISEBSPAY_LISTEN_PORT }}
+        run: |
+          source deploy/gha-env.sh
+
+          pick_first() {
+            for v in "$@"; do
+              if [ -n "$v" ]; then
+                printf '%s' "$v"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          SSH_PRIVATE_KEY=$(pick_first "$KEY_PAY" "$KEY_UBUNTU1") || true
+          SSH_HOST_RAW=$(pick_first "$HOST_VAR" "$HOST_SECRET" "$DEFAULT_SSH_HOST") || true
+          SSH_USER_RAW=$(pick_first "$USER_VAR" "$USER_SECRET" "$DEFAULT_SSH_USER") || true
+          SSH_PORT_RAW=$(pick_first "$PORT_VAR" "$PORT_SECRET" "$DEFAULT_SSH_PORT") || true
+          CONNECTION_STRING_RAW=$(pick_first "$CONN_PAY" "$CONN_UBUNTU1") || true
+          APP_ROOT_RAW=$(pick_first "$APP_ROOT_VAR" "$APP_ROOT_SECRET" "$DEFAULT_APP_ROOT") || true
+          SERVICE_NAME_RAW=$(pick_first "$SERVICE_VAR" "$SERVICE_SECRET" "$DEFAULT_SERVICE_NAME") || true
+          LISTEN_PORT_RAW=$(pick_first "$PORT_APP_VAR" "$PORT_APP_SECRET" "$DEFAULT_LISTEN_PORT") || true
+
+          missing=0
+          if [ -z "$SSH_PRIVATE_KEY" ]; then
+            echo "::error::Clé SSH manquante. Ajoutez GISEBSPAY_SSH_PRIVATE_KEY ou SSH_PRIVATE_KEY_UBUNTU1 au dépôt."
+            missing=1
+          fi
+          if [ -z "$CONNECTION_STRING_RAW" ]; then
+            echo "::error::Connection string manquante. Ajoutez GISEBSPAY_CONNECTION_STRING ou UBUNTU1_CONNECTION_STRING au dépôt."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ] || exit 1
+
+          SSH_HOST=$(gha_sanitize_host "$SSH_HOST_RAW")
+          SSH_USER=$(gha_sanitize "$SSH_USER_RAW")
+          SSH_PORT=$(gha_sanitize "$SSH_PORT_RAW")
+          APP_ROOT=$(gha_sanitize "$APP_ROOT_RAW")
+          SERVICE_NAME=$(gha_sanitize "$SERVICE_NAME_RAW")
+          LISTEN_PORT=$(gha_sanitize "$LISTEN_PORT_RAW")
+
+          gha_write_env SSH_PRIVATE_KEY "$SSH_PRIVATE_KEY"
+          gha_write_env SSH_HOST "$SSH_HOST"
+          gha_write_env SSH_USER "$SSH_USER"
+          gha_write_env SSH_PORT "$SSH_PORT"
+          gha_write_env APP_ROOT "$APP_ROOT"
+          gha_write_env SERVICE_NAME "$SERVICE_NAME"
+          gha_write_env APP_NAME "$DEFAULT_APP_NAME"
+          gha_write_env LISTEN_PORT "$LISTEN_PORT"
+          gha_write_env CONNECTION_STRING "$(gha_sanitize "$CONNECTION_STRING_RAW")"
+          echo "OK → ${SSH_USER}@${SSH_HOST}:${SSH_PORT} service=${SERVICE_NAME} port=${LISTEN_PORT}"
+
+      - name: Setup SSH key
+        id: ssh
+        run: |
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keygen -y -f "$HOME/.ssh/deploy_key" > /dev/null 2>&1 || {
+            echo "::error::Clé SSH invalide — vérifiez le format multiligne (BEGIN/END OPENSSH PRIVATE KEY)"
+            exit 1
+          }
+          echo "SSH_KEY_PATH=$HOME/.ssh/deploy_key" >> "$GITHUB_ENV"
+
+      - name: Add server to known_hosts
+        run: ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Deploy
+        env:
+          SSH_KEY_PATH: ${{ env.SSH_KEY_PATH }}
+          DLL_NAME: ${{ env.DLL_NAME }}
+          PUBLISH_DIR: publish
+        run: bash deploy/deploy-gha.sh
+
+      - name: Service status
+        if: always() && steps.ssh.outcome == 'success'
+        run: |
+          ssh -i "$SSH_KEY_PATH" -p "$SSH_PORT" -o BatchMode=yes "${SSH_USER}@${SSH_HOST}" \
+            "sudo systemctl status ${SERVICE_NAME} --no-pager || true"

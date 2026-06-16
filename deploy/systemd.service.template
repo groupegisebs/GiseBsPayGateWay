@@ -1,0 +1,24 @@
+[Unit]
+Description=${APP_NAME}
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=${APP_PATH}
+ExecStart=/usr/bin/dotnet ${APP_PATH}/${DLL_NAME}
+Environment=ASPNETCORE_ENVIRONMENT=Production
+EnvironmentFile=-${APP_PATH}/app.env
+# app.env contient : UBUNTU1_CONNECTION_STRING, UBUNTU1_APP_ROOT, UBUNTU1_SERVICE_NAME, UBUNTU1_LISTEN_PORT, UBUNTU1_APP_NAME
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=30
+KillSignal=SIGINT
+SyslogIdentifier=${SERVICE_NAME}
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -16,6 +16,13 @@ logs/
 # Secrets
 appsettings.Production.json
 appsettings.Local.json
+.env
+
+# Deploy (configs locales)
+deploy/project.config.json
+deploy/deploy-all.config.json
+deploy/deploy.local.ps1
+publish/
 
 # OS
 .DS_Store

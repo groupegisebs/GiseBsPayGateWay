@@ -25,6 +25,8 @@ Les applications clientes **ne communiquent jamais directement avec Stripe**. El
 ```
 GiseBsPayGateWay/
 ├── GiseBsPayGateway.sln
+├── .github/workflows/         # Deploy Production (push main)
+├── deploy/                    # Scripts GHA + déploiement manuel
 ├── scripts/
 │   └── init-postgresql.sql
 └── src/GiseBsPayGateway/
@@ -156,143 +158,37 @@ dotnet run
 
 ---
 
-## Déploiement Ubuntu (PostgreSQL + systemd + Nginx Proxy Manager)
+## Déploiement production
 
-### 1. Préparer le serveur
+**Déploiement automatique via GitHub Actions** (push sur `main`), comme SecureMail Gateway et ComptaDoc-PME.
 
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y postgresql postgresql-contrib nginx curl
+Guide complet : [`deploy/README.md`](deploy/README.md) · Secrets : [`deploy/GITHUB-SECRETS.md`](deploy/GITHUB-SECRETS.md)
+
+| Élément | Valeur |
+|---------|--------|
+| Workflow | `.github/workflows/deploy-production.yml` |
+| Service systemd | `gisebs-pay-gateway` |
+| Répertoire app | `/opt/apps/gisebs-pay-gateway/app` |
+| Port d'écoute | `7843` (`http://0.0.0.0:7843`) |
+| Healthcheck | `GET /health` |
+| NPM | Forward port `7843`, scheme **http** + SSL Let's Encrypt |
+
+Secrets minimum au dépôt : `GISEBSPAY_CONNECTION_STRING` + clé SSH (`GISEBSPAY_SSH_PRIVATE_KEY` ou `SSH_PRIVATE_KEY_UBUNTU1` org).
+
+### Déploiement manuel (secours)
+
+```bat
+deploy\deploy.bat
 ```
 
-### 2. Installer .NET 10
+Ou sur le serveur : `./deploy/deploy.sh`
 
-```bash
-wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt update
-sudo apt install -y aspnetcore-runtime-10.0
-```
-
-### 3. PostgreSQL
-
-```bash
-sudo -u postgres psql -f /opt/gisebs-pay-gateway/scripts/init-postgresql.sql
-```
-
-Mettez à jour le mot de passe dans la chaîne de connexion.
-
-### 4. Publier l'application
-
-```bash
-cd /opt/gisebs-pay-gateway/src/GiseBsPayGateway
-dotnet publish -c Release -o /var/www/gisebs-pay-gateway
-```
-
-### 5. Configuration production
-
-Créez `/var/www/gisebs-pay-gateway/appsettings.Production.json` :
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=127.0.0.1;Port=5432;Database=gisebs_pay_gateway;Username=gisebs_pay;Password=MOT_DE_PASSE_FORT"
-  },
-  "Jwt": {
-    "SecretKey": "GENERER-UNE-CLE-ALEATOIRE-DE-64-CARACTERES-MINIMUM"
-  },
-  "Seed": {
-    "AdminEmail": "admin@gisebs.com",
-    "AdminPassword": "MotDePasseAdminFort!"
-  }
-}
-```
-
-```bash
-export ASPNETCORE_ENVIRONMENT=Production
-cd /var/www/gisebs-pay-gateway
-dotnet GiseBsPayGateway.dll -- migrate  # ou: dotnet ef database update depuis la machine de build
-```
-
-> Les migrations s'exécutent automatiquement au démarrage via `DbSeeder`.
-
-### 6. Service systemd
-
-Créez `/etc/systemd/system/gisebs-pay-gateway.service` :
-
-```ini
-[Unit]
-Description=GISEBS Pay Gateway
-After=network.target postgresql.service
-
-[Service]
-WorkingDirectory=/var/www/gisebs-pay-gateway
-ExecStart=/usr/bin/dotnet /var/www/gisebs-pay-gateway/GiseBsPayGateway.dll
-Restart=always
-RestartSec=10
-User=www-data
-Environment=ASPNETCORE_ENVIRONMENT=Production
-Environment=ASPNETCORE_URLS=http://0.0.0.0:7843
-
-[Install]
-WantedBy=multi-user.target
-```
-
-> **Type d'adresse (`ASPNETCORE_URLS`)**
->
-> | Adresse | Écoute sur | Usage |
-> |---------|------------|-------|
-> | `http://127.0.0.1:7843` | Loopback IPv4 uniquement | NPM installé **nativement** sur le même serveur |
-> | `http://0.0.0.0:7843` | Toutes les interfaces réseau | **Recommandé** si NPM tourne en Docker sur le même hôte |
-> | `http://localhost:7843` | Équivalent loopback (127.0.0.1 / ::1) | Développement local uniquement |
->
-> En production derrière NPM, préférez `0.0.0.0` : NPM (souvent conteneurisé) accède à l'hôte via son IP, pas via `127.0.0.1`.
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable gisebs-pay-gateway
-sudo systemctl start gisebs-pay-gateway
-sudo systemctl status gisebs-pay-gateway
-```
-
-Logs :
-
-```bash
-journalctl -u gisebs-pay-gateway -f
-tail -f /var/www/gisebs-pay-gateway/logs/gisebs-pay-gateway-*.log
-```
-
-### 7. Nginx Proxy Manager (NPM)
-
-Dans l'interface NPM (généralement port 81) :
-
-1. **Hosts → Proxy Hosts → Add Proxy Host**
-2. **Domain Names** : `pay.gisebs.com`
-3. **Scheme** : `http`
-4. **Forward Hostname/IP** :
-   - NPM **natif** (même machine) → `127.0.0.1`
-   - NPM **Docker** → IP du serveur (`hostname -I`) ou `host.docker.internal` (selon config)
-5. **Forward Port** : `7843`
-6. **Block Common Exploits** : activé
-7. **Websockets Support** : activé (optionnel)
-8. Onglet **SSL** :
-   - Request a new SSL Certificate (Let's Encrypt)
-   - Force SSL + HTTP/2
-
-### 8. Webhook Stripe en production
-
-URL webhook : `https://pay.gisebs.com/api/webhooks/stripe`
-
-Copiez le **Signing secret** dans le dashboard admin → Stripe.
-
-### 9. Sécurité post-déploiement
+### Sécurité post-déploiement
 
 - [ ] Changer le mot de passe admin seed
 - [ ] Régénérer `Jwt:SecretKey`
-- [ ] Restreindre PostgreSQL au localhost
-- [ ] Configurer un pare-feu (`ufw allow 80,443`)
-- [ ] Sauvegardes PostgreSQL automatiques
-- [ ] Ne jamais committer `appsettings.Production.json`
+- [ ] Configurer Stripe (dashboard admin)
+- [ ] Ne jamais committer `appsettings.Production.json` ni `deploy/*.config.json`
 
 ---
 

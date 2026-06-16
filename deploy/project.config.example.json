@@ -1,0 +1,11 @@
+{
+  "_comment": "Copiez ce fichier vers deploy/project.config.json et adaptez-le (ne pas committer project.config.json).",
+  "appName": "GISEBS Pay Gateway",
+  "serviceName": "gisebs-pay-gateway",
+  "appRoot": "/opt/apps/gisebs-pay-gateway",
+  "dllName": "GiseBsPayGateway.dll",
+  "projectPath": "src/GiseBsPayGateway/GiseBsPayGateway.csproj",
+  "healthCheckUrl": "http://localhost:7843/health",
+  "listenPort": 7843,
+  "sshIdentityKey": "cognidoc_deploy"
+}
