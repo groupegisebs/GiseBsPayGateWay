@@ -16,6 +16,7 @@ using Serilog;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddUbuntu1Overrides();
+builder.Configuration.AddServerSecretsFile();
 builder.ApplyListenUrl();
 
 builder.Services.Configure<DeploymentSettings>(
@@ -30,6 +31,7 @@ builder.Host.UseSerilog((context, config) =>
 });
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<StripeSecretsOptions>(builder.Configuration.GetSection(StripeSecretsOptions.SectionName));
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKeyOptions.SectionName));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 
@@ -104,8 +106,10 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IStripeSettingsProvider, StripeSettingsProvider>();
 builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

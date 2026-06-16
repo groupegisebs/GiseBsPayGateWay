@@ -102,6 +102,8 @@ Host=51.79.53.197;Port=5432;Database=gisebs_pay_gateway;Username=gisedocuser;Pas
 | Service | `gisebs-pay-gateway` |
 | Port | `7843` |
 
+> **Stripe et JWT** : ne pas les mettre dans GitHub. Voir **[SERVER-SECRETS.md](./SERVER-SECRETS.md)** — fichier `secrets.json` sur le serveur uniquement.
+
 ---
 
 ## Avant le premier déploiement (une fois sur le serveur)

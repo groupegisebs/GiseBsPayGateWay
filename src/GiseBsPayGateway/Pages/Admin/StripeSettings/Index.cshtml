@@ -7,35 +7,70 @@
 
 <h1 class="mb-4">Configuration Stripe</h1>
 
-@if (Model.CurrentSettings is not null)
+@if (TempData["StripeError"] is string stripeError)
+{
+    <div class="alert alert-warning">@stripeError</div>
+}
+
+@if (Model.IsConfiguredFromServerFile)
+{
+    <div class="alert alert-success">
+        <strong>Clés chargées depuis le fichier serveur</strong> (priorité sur l'admin).
+        @if (!string.IsNullOrWhiteSpace(Model.ServerSecretsFilePath))
+        {
+            <div class="mt-1"><code>@Model.ServerSecretsFilePath</code></div>
+        }
+        <div class="mt-2 small">
+            Pour modifier les clés Stripe, éditez ce fichier sur le serveur puis :
+            <code>sudo systemctl restart gisebs-pay-gateway</code>
+        </div>
+    </div>
+}
+else
 {
     <div class="alert alert-info">
-        Configuration active : mode @(Model.CurrentSettings.IsLiveMode ? "Production" : "Test") —
+        En <strong>production</strong>, préférez le fichier
+        <code>/opt/apps/gisebs-pay-gateway/secrets.json</code>
+        (voir <code>deploy/SERVER-SECRETS.md</code>). L'admin ci-dessous sert de secours (dev local).
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.MaskedPublishableKey))
+{
+    <div class="alert alert-secondary py-2">
+        Configuration active : mode @(Model.IsLiveMode ? "Production" : "Test") —
         clé publique <code>@Model.MaskedPublishableKey</code>
     </div>
 }
 
-<form method="post" class="col-md-8">
-    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
-    <div class="mb-3">
-        <label asp-for="Input.PublishableKey" class="form-label"></label>
-        <input asp-for="Input.PublishableKey" class="form-control" />
-    </div>
-    <div class="mb-3">
-        <label asp-for="Input.SecretKey" class="form-label"></label>
-        <input asp-for="Input.SecretKey" class="form-control" type="password" autocomplete="new-password" />
-        <div class="form-text">La clé secrète n'est jamais affichée en clair dans les logs.</div>
-    </div>
-    <div class="mb-3">
-        <label asp-for="Input.WebhookSecret" class="form-label"></label>
-        <input asp-for="Input.WebhookSecret" class="form-control" type="password" autocomplete="new-password" />
-    </div>
-    <div class="mb-3 form-check">
-        <input asp-for="Input.IsLiveMode" class="form-check-input" />
-        <label asp-for="Input.IsLiveMode" class="form-check-label"></label>
-    </div>
-    <button type="submit" class="btn btn-primary">Enregistrer</button>
-</form>
+@if (Model.IsConfiguredFromServerFile)
+{
+    <p class="text-muted">Le formulaire est désactivé tant que <code>secrets.json</code> contient une clé secrète Stripe.</p>
+}
+else
+{
+    <form method="post" class="col-md-8">
+        <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+        <div class="mb-3">
+            <label asp-for="Input.PublishableKey" class="form-label"></label>
+            <input asp-for="Input.PublishableKey" class="form-control" />
+        </div>
+        <div class="mb-3">
+            <label asp-for="Input.SecretKey" class="form-label"></label>
+            <input asp-for="Input.SecretKey" class="form-control" type="password" autocomplete="new-password" />
+            <div class="form-text">La clé secrète n'est jamais affichée en clair dans les logs.</div>
+        </div>
+        <div class="mb-3">
+            <label asp-for="Input.WebhookSecret" class="form-label"></label>
+            <input asp-for="Input.WebhookSecret" class="form-control" type="password" autocomplete="new-password" />
+        </div>
+        <div class="mb-3 form-check">
+            <input asp-for="Input.IsLiveMode" class="form-check-input" />
+            <label asp-for="Input.IsLiveMode" class="form-check-label"></label>
+        </div>
+        <button type="submit" class="btn btn-primary">Enregistrer</button>
+    </form>
+}
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />

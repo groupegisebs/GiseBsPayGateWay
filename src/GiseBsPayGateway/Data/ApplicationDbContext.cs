@@ -17,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<PricingPlan> PricingPlans => Set<PricingPlan>();
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<PaymentInvoice> PaymentInvoices => Set<PaymentInvoice>();
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
@@ -77,6 +78,37 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasOne(x => x.PricingPlan).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.PricingPlanId);
             e.HasOne(x => x.Subscription).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.SubscriptionId);
+        });
+
+        builder.Entity<PaymentInvoice>(e =>
+        {
+            e.HasIndex(x => x.InvoiceCode).IsUnique();
+            e.HasIndex(x => x.StripeInvoiceId).IsUnique().HasFilter("\"StripeInvoiceId\" IS NOT NULL");
+            e.Property(x => x.InvoiceCode).HasMaxLength(50);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.CustomerCode).HasMaxLength(50);
+            e.Property(x => x.CustomerEmail).HasMaxLength(256);
+            e.Property(x => x.CustomerName).HasMaxLength(200);
+            e.Property(x => x.ProductCode).HasMaxLength(50);
+            e.Property(x => x.ProductName).HasMaxLength(200);
+            e.Property(x => x.PlanCode).HasMaxLength(50);
+            e.Property(x => x.PlanName).HasMaxLength(200);
+            e.Property(x => x.StripeInvoiceId).HasMaxLength(100);
+            e.Property(x => x.StripeInvoiceNumber).HasMaxLength(100);
+            e.Property(x => x.StripePaymentIntentId).HasMaxLength(100);
+            e.Property(x => x.StripeCheckoutSessionId).HasMaxLength(100);
+            e.Property(x => x.BillingReason).HasMaxLength(50);
+            e.Property(x => x.HostedInvoiceUrl).HasMaxLength(1000);
+            e.Property(x => x.InvoicePdfUrl).HasMaxLength(1000);
+            e.Property(x => x.ReceiptUrl).HasMaxLength(1000);
+            e.Property(x => x.LineItemsDescription).HasMaxLength(2000);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
+            e.HasOne(x => x.PricingPlan).WithMany().HasForeignKey(x => x.PricingPlanId);
+            e.HasOne(x => x.PaymentTransaction).WithMany().HasForeignKey(x => x.PaymentTransactionId);
+            e.HasOne(x => x.Subscription).WithMany().HasForeignKey(x => x.SubscriptionId);
         });
 
         builder.Entity<Subscription>(e =>

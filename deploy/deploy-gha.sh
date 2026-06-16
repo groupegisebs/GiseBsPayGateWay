@@ -49,7 +49,7 @@ fi
 
 [[ -f "${PUBLISH_DIR}/${DLL_NAME}" ]] || { echo "Assembly introuvable : ${PUBLISH_DIR}/${DLL_NAME}" >&2; exit 1; }
 
-ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "sudo mkdir -p '${APP_DIR}' '${BACKUP_DIR}' '${APP_DIR}/logs' && sudo chown -R ${SSH_USER}:${SSH_USER} '${APP_ROOT}'"
+ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" "sudo mkdir -p '${APP_DIR}' '${BACKUP_DIR}' '${APP_DIR}/logs' '${APP_ROOT}' && sudo chown -R ${SSH_USER}:${SSH_USER} '${APP_ROOT}'"
 
 ssh "${SSH_OPTS[@]}" "${SSH_TARGET}" bash -s <<REMOTE_BACKUP
 set -eu
@@ -70,6 +70,7 @@ ENV_FILE="$(mktemp)"
   printf 'UBUNTU1_SERVICE_NAME=%s\n' "${SERVICE_NAME}"
   printf 'UBUNTU1_LISTEN_PORT=%s\n' "${LISTEN_PORT}"
   printf 'UBUNTU1_APP_NAME=%s\n' "${APP_NAME}"
+  printf 'GISEBSPAY_SECRETS_FILE=%s/secrets.json\n' "${APP_ROOT}"
 } > "${ENV_FILE}"
 scp "${SCP_OPTS[@]}" "${ENV_FILE}" "${SSH_TARGET}:/tmp/${SERVICE_NAME}.app.env"
 rm -f "${ENV_FILE}"

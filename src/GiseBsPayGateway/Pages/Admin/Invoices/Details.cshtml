@@ -1,0 +1,138 @@
+@page "{id:guid}"
+@model GiseBsPayGateway.Pages.Admin.Invoices.DetailsModel
+@{
+    ViewData["Title"] = $"Facture {Model.Invoice.InvoiceCode}";
+    Layout = "_Layout";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Facture <code>@Model.Invoice.InvoiceCode</code></h1>
+    <a asp-page="Index" class="btn btn-secondary">Retour</a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">Transaction</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Statut</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge @(Model.Invoice.Status == GiseBsPayGateway.Enums.InvoiceStatus.Paid ? "text-bg-success" : "text-bg-secondary")">
+                            @Model.Invoice.Status
+                        </span>
+                    </dd>
+                    <dt class="col-sm-4">Montant</dt>
+                    <dd class="col-sm-8"><strong>@Model.Invoice.Amount.ToString("N2") @Model.Invoice.Currency.ToUpper()</strong></dd>
+                    <dt class="col-sm-4">Date facture</dt>
+                    <dd class="col-sm-8">@Model.Invoice.InvoiceDate.ToString("f")</dd>
+                    <dt class="col-sm-4">Payé le</dt>
+                    <dd class="col-sm-8">@(Model.Invoice.PaidAt?.ToString("f") ?? "—")</dd>
+                    @if (Model.Invoice.PeriodStart.HasValue)
+                    {
+                        <dt class="col-sm-4">Période</dt>
+                        <dd class="col-sm-8">@Model.Invoice.PeriodStart?.ToString("d") — @Model.Invoice.PeriodEnd?.ToString("d")</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Invoice.BillingReason))
+                    {
+                        <dt class="col-sm-4">Type</dt>
+                        <dd class="col-sm-8">@Model.Invoice.BillingReason</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Invoice.LineItemsDescription))
+                    {
+                        <dt class="col-sm-4">Détail</dt>
+                        <dd class="col-sm-8">@Model.Invoice.LineItemsDescription</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.PaymentCode))
+                    {
+                        <dt class="col-sm-4">Code paiement</dt>
+                        <dd class="col-sm-8"><code>@Model.PaymentCode</code></dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.SubscriptionCode))
+                    {
+                        <dt class="col-sm-4">Abonnement</dt>
+                        <dd class="col-sm-8"><code>@Model.SubscriptionCode</code></dd>
+                    }
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Client</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Code client</dt>
+                    <dd class="col-sm-8"><code>@Model.Invoice.CustomerCode</code></dd>
+                    <dt class="col-sm-4">Email</dt>
+                    <dd class="col-sm-8">@Model.Invoice.CustomerEmail</dd>
+                    <dt class="col-sm-4">Nom</dt>
+                    <dd class="col-sm-8">@(Model.Invoice.CustomerName ?? "—")</dd>
+                    <dt class="col-sm-4">Application</dt>
+                    <dd class="col-sm-8">@Model.AppName</dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Produit</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Code produit</dt>
+                    <dd class="col-sm-8"><code>@Model.Invoice.ProductCode</code></dd>
+                    <dt class="col-sm-4">Nom</dt>
+                    <dd class="col-sm-8">@Model.Invoice.ProductName</dd>
+                    <dt class="col-sm-4">Plan</dt>
+                    <dd class="col-sm-8"><code>@Model.Invoice.PlanCode</code> — @Model.Invoice.PlanName</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">Documents</div>
+            <div class="card-body d-grid gap-2">
+                @if (!string.IsNullOrWhiteSpace(Model.Invoice.InvoicePdfUrl))
+                {
+                    <a href="@Model.Invoice.InvoicePdfUrl" target="_blank" rel="noopener" class="btn btn-primary">
+                        Télécharger PDF
+                    </a>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.Invoice.HostedInvoiceUrl))
+                {
+                    <a href="@Model.Invoice.HostedInvoiceUrl" target="_blank" rel="noopener" class="btn btn-outline-primary">
+                        Voir facture Stripe
+                    </a>
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.Invoice.ReceiptUrl))
+                {
+                    <a href="@Model.Invoice.ReceiptUrl" target="_blank" rel="noopener" class="btn btn-outline-secondary">
+                        Reçu de paiement
+                    </a>
+                }
+                @if (string.IsNullOrWhiteSpace(Model.Invoice.InvoicePdfUrl) &&
+                     string.IsNullOrWhiteSpace(Model.Invoice.HostedInvoiceUrl) &&
+                     string.IsNullOrWhiteSpace(Model.Invoice.ReceiptUrl))
+                {
+                    <p class="text-muted mb-0">Aucun document Stripe disponible pour cette facture.</p>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">Références Stripe</div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-5">Invoice ID</dt>
+                    <dd class="col-sm-7"><code>@(Model.Invoice.StripeInvoiceId ?? "—")</code></dd>
+                    <dt class="col-sm-5">N° Stripe</dt>
+                    <dd class="col-sm-7">@(Model.Invoice.StripeInvoiceNumber ?? "—")</dd>
+                    <dt class="col-sm-5">Payment Intent</dt>
+                    <dd class="col-sm-7"><code>@(Model.Invoice.StripePaymentIntentId ?? "—")</code></dd>
+                    <dt class="col-sm-5">Session</dt>
+                    <dd class="col-sm-7"><code>@(Model.Invoice.StripeCheckoutSessionId ?? "—")</code></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>

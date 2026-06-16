@@ -12,24 +12,24 @@ namespace GiseBsPayGateway.Services;
 public class StripeService : IStripeService
 {
     private readonly ApplicationDbContext _db;
+    private readonly IStripeSettingsProvider _stripeSettings;
     private readonly ILogger<StripeService> _logger;
 
-    public StripeService(ApplicationDbContext db, ILogger<StripeService> logger)
+    public StripeService(ApplicationDbContext db, IStripeSettingsProvider stripeSettings, ILogger<StripeService> logger)
     {
         _db = db;
+        _stripeSettings = stripeSettings;
         _logger = logger;
     }
 
     private async Task ConfigureStripeAsync(CancellationToken cancellationToken)
     {
-        var settings = await _db.StripeSettings.AsNoTracking()
-            .Where(x => x.IsActive)
-            .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        var settings = await _stripeSettings.GetActiveAsync(cancellationToken);
 
         if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
         {
-            throw new InvalidOperationException("Stripe n'est pas configuré. Configurez les clés dans le dashboard admin.");
+            throw new InvalidOperationException(
+                "Stripe n'est pas configuré. Créez /opt/apps/gisebs-pay-gateway/secrets.json sur le serveur ou configurez les clés dans l'admin.");
         }
 
         StripeConfiguration.ApiKey = settings.SecretKey;

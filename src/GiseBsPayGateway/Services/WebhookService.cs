@@ -12,21 +12,27 @@ public class WebhookService : IWebhookService
 {
     private readonly ApplicationDbContext _db;
     private readonly IAuditService _auditService;
+    private readonly IInvoiceService _invoiceService;
+    private readonly IStripeSettingsProvider _stripeSettings;
     private readonly ILogger<WebhookService> _logger;
 
-    public WebhookService(ApplicationDbContext db, IAuditService auditService, ILogger<WebhookService> logger)
+    public WebhookService(
+        ApplicationDbContext db,
+        IAuditService auditService,
+        IInvoiceService invoiceService,
+        IStripeSettingsProvider stripeSettings,
+        ILogger<WebhookService> logger)
     {
         _db = db;
         _auditService = auditService;
+        _invoiceService = invoiceService;
+        _stripeSettings = stripeSettings;
         _logger = logger;
     }
 
     public async Task ProcessStripeWebhookAsync(string json, string signatureHeader, CancellationToken cancellationToken = default)
     {
-        var settings = await _db.StripeSettings.AsNoTracking()
-            .Where(x => x.IsActive)
-            .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken)
+        var settings = await _stripeSettings.GetActiveAsync(cancellationToken)
             ?? throw new InvalidOperationException("Stripe non configuré.");
 
         StripeConfiguration.ApiKey = settings.SecretKey;
@@ -115,6 +121,7 @@ public class WebhookService : IWebhookService
             .Include(x => x.PricingPlan)
             .Include(x => x.Customer)
             .Include(x => x.Product)
+            .Include(x => x.ClientApplication)
             .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
 
         if (payment is null)
@@ -145,6 +152,7 @@ public class WebhookService : IWebhookService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+        await _invoiceService.SaveFromCheckoutCompletedAsync(session, payment, cancellationToken);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -153,6 +161,7 @@ public class WebhookService : IWebhookService
         var subscriptionId = GetInvoiceSubscriptionId(invoice);
         if (subscriptionId is null)
         {
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
             return;
         }
 
@@ -161,6 +170,7 @@ public class WebhookService : IWebhookService
 
         if (subscription is null)
         {
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
             return;
         }
 
@@ -169,6 +179,7 @@ public class WebhookService : IWebhookService
         subscription.CurrentPeriodEnd = invoice.PeriodEnd;
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+        await _invoiceService.SaveFromStripeInvoiceAsync(invoice, InvoiceStatus.Paid, cancellationToken);
     }
 
     private async Task HandleInvoiceFailedAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -177,6 +188,7 @@ public class WebhookService : IWebhookService
         var subscriptionId = GetInvoiceSubscriptionId(invoice);
         if (subscriptionId is null)
         {
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
             return;
         }
 
@@ -185,12 +197,14 @@ public class WebhookService : IWebhookService
 
         if (subscription is null)
         {
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
             return;
         }
 
         subscription.Status = SubscriptionStatus.PastDue;
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+        await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
     }
 
     private async Task HandleSubscriptionChangedAsync(Event stripeEvent, CancellationToken cancellationToken)

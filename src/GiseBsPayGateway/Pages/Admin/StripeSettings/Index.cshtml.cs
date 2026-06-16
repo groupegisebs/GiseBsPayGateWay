@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
+using GiseBsPayGateway.Configuration;
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace GiseBsPayGateway.Pages.Admin.StripeSettings;
 
@@ -12,18 +14,22 @@ public class IndexModel : PageModel
 {
     private readonly ApplicationDbContext _db;
     private readonly IAuditService _auditService;
+    private readonly IStripeSettingsProvider _stripeSettings;
 
-    public IndexModel(ApplicationDbContext db, IAuditService auditService)
+    public IndexModel(ApplicationDbContext db, IAuditService auditService, IStripeSettingsProvider stripeSettings)
     {
         _db = db;
         _auditService = auditService;
+        _stripeSettings = stripeSettings;
     }
 
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
-    public Entities.StripeSettings? CurrentSettings { get; private set; }
+    public bool IsConfiguredFromServerFile { get; private set; }
+    public string? ServerSecretsFilePath { get; private set; }
     public string MaskedPublishableKey { get; private set; } = string.Empty;
+    public bool IsLiveMode { get; private set; }
 
     public class InputModel
     {
@@ -42,21 +48,27 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        CurrentSettings = await _db.StripeSettings
-            .Where(x => x.IsActive)
-            .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        IsConfiguredFromServerFile = _stripeSettings.IsConfiguredFromServerFile;
+        ServerSecretsFilePath = ServerSecretsConfiguration.ResolveSecretsFilePath(HttpContext.RequestServices.GetRequiredService<IConfiguration>());
 
-        if (CurrentSettings is not null)
+        var active = await _stripeSettings.GetActiveAsync(cancellationToken);
+        if (active is not null)
         {
-            Input.PublishableKey = CurrentSettings.PublishableKey;
-            Input.IsLiveMode = CurrentSettings.IsLiveMode;
-            MaskedPublishableKey = MaskKey(CurrentSettings.PublishableKey);
+            MaskedPublishableKey = MaskKey(active.PublishableKey);
+            IsLiveMode = active.IsLiveMode;
+            Input.PublishableKey = active.PublishableKey;
+            Input.IsLiveMode = active.IsLiveMode;
         }
     }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
+        if (_stripeSettings.IsConfiguredFromServerFile)
+        {
+            TempData["StripeError"] = "Les clés Stripe sont définies dans secrets.json sur le serveur. Modifiez ce fichier puis redémarrez le service.";
+            return RedirectToPage();
+        }
+
         if (!ModelState.IsValid)
         {
             await OnGetAsync(cancellationToken);
@@ -81,7 +93,7 @@ public class IndexModel : PageModel
 
         _db.StripeSettings.Add(settings);
         await _db.SaveChangesAsync(cancellationToken);
-        await _auditService.LogAsync("StripeSettingsUpdated", nameof(StripeSettings), settings.Id.ToString(), true,
+        await _auditService.LogAsync("StripeSettingsUpdated", nameof(Entities.StripeSettings), settings.Id.ToString(), true,
             $"LiveMode={settings.IsLiveMode}", userName: User.Identity?.Name);
 
         return RedirectToPage();
