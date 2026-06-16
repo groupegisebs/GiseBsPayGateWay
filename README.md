@@ -24,7 +24,7 @@ Les applications clientes **ne communiquent jamais directement avec Stripe**. El
 
 ```
 GiseBsPayGateWay/
-├── GiseBsPayGateway.sln
+├── GiseBsPayGateway.slnx
 ├── .github/workflows/         # Deploy Production (push main)
 ├── deploy/                    # Scripts GHA + déploiement manuel
 ├── scripts/

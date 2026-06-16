@@ -38,7 +38,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore GiseBsPayGateway.sln
+        run: dotnet restore GiseBsPayGateway.slnx
 
       - name: Publish
         run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o publish --no-self-contained --no-restore
