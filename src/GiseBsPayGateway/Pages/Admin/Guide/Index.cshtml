@@ -1,0 +1,185 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.Guide.IndexModel
+@{
+    ViewData["Title"] = "Guide";
+    Layout = "_Layout";
+}
+
+<h1 class="mb-4">Guide GISEBS Pay Gateway</h1>
+
+<ul class="nav nav-tabs mb-4" id="guideTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="arch-tab" data-bs-toggle="tab" data-bs-target="#arch" type="button">Architecture</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="api-tab" data-bs-toggle="tab" data-bs-target="#api" type="button">Intégration API</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="deploy-tab" data-bs-toggle="tab" data-bs-target="#deploy" type="button">Déploiement</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="stripe-tab" data-bs-toggle="tab" data-bs-target="#stripe" type="button">Stripe</button>
+    </li>
+</ul>
+
+<div class="tab-content" id="guideTabsContent">
+    <div class="tab-pane fade show active" id="arch" role="tabpanel">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Principe</h5>
+                <p>Les applications GISEBS (HoloTuto, CogniDoc, WarrantySafe, etc.) <strong>ne communiquent jamais directement avec Stripe</strong>. Elles appellent ce gateway avec un <code>AppCode</code> et une <code>API Key</code>.</p>
+                <ol>
+                    <li>L'application cliente demande une session Checkout via l'API.</li>
+                    <li>Le gateway crée la session Stripe et retourne l'URL de paiement.</li>
+                    <li>Le client final paie sur Stripe Checkout.</li>
+                    <li>Stripe envoie un webhook au gateway, qui met à jour le statut.</li>
+                    <li>L'application cliente interroge le statut via <code>GET /api/payments/{paymentCode}</code>.</li>
+                </ol>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Données liées à chaque paiement</h5>
+                <ul class="mb-0">
+                    <li>Application cliente (<code>AppCode</code>)</li>
+                    <li>Client final (<code>CustomerCode</code>)</li>
+                    <li>Produit et plan tarifaire</li>
+                    <li>Transaction Stripe + statut interne</li>
+                    <li>Code unique de paiement (<code>PaymentCode</code>)</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="api" role="tabpanel">
+        <div class="alert alert-info">
+            URL de base actuelle : <strong>@Model.BaseUrl</strong>
+        </div>
+
+        <h5>Authentification (obligatoire)</h5>
+        <p>Chaque requête API doit inclure ces en-têtes :</p>
+        <pre class="bg-light p-3 rounded"><code>X-App-Code: HOLOTUTO
+X-Api-Key: gbsk_votre_cle_api</code></pre>
+
+        <h5 class="mt-4">Étapes côté application cliente</h5>
+        <ol>
+            <li>Créer l'application dans <a asp-page="/Admin/Applications/Index">Applications</a> et générer une clé API.</li>
+            <li>Créer le produit et le plan dans <a asp-page="/Admin/Products/Index">Produits</a> / <a asp-page="/Admin/Plans/Index">Plans</a>.</li>
+            <li>Appeler <code>POST /api/checkout/session</code> depuis le backend de l'app (jamais depuis le navigateur avec la clé secrète).</li>
+            <li>Rediriger l'utilisateur vers l'URL Checkout retournée.</li>
+            <li>Après paiement, vérifier le statut avec <code>GET /api/payments/{paymentCode}</code>.</li>
+        </ol>
+
+        <h5 class="mt-4">Exemple — session Checkout</h5>
+        <pre class="bg-light p-3 rounded small"><code>POST @Model.BaseUrl/api/checkout/session
+X-App-Code: HOLOTUTO
+X-Api-Key: gbsk_...
+Content-Type: application/json
+
+{
+  "customerCode": "USER-123",
+  "email": "client@example.com",
+  "fullName": "Jean Dupont",
+  "productCode": "PREMIUM",
+  "planCode": "MONTHLY",
+  "successUrl": "https://holotuto.com/payment/success",
+  "cancelUrl": "https://holotuto.com/payment/cancel"
+}</code></pre>
+
+        <h5 class="mt-4">Endpoints disponibles</h5>
+        <table class="table table-sm">
+            <thead><tr><th>Méthode</th><th>Route</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td><code>POST</code></td><td><code>/api/checkout/session</code></td><td>Créer une session Stripe Checkout</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/payments/{paymentCode}</code></td><td>Statut d'un paiement</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/customers/{customerCode}/subscriptions</code></td><td>Abonnements d'un client</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/subscriptions/cancel</code></td><td>Annuler un abonnement</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/auth/token</code></td><td>JWT optionnel (AppCode + API Key)</td></tr>
+            </tbody>
+        </table>
+
+        <p class="text-muted small mb-0">Swagger disponible en développement : <code>/swagger</code></p>
+    </div>
+
+    <div class="tab-pane fade" id="deploy" role="tabpanel">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">GitHub Actions (recommandé)</h5>
+                <p>Chaque push sur la branche <code>main</code> déclenche le workflow <strong>Deploy Production</strong>.</p>
+                <ol>
+                    <li>Build et publish .NET</li>
+                    <li>Transfert SCP vers le serveur Ubuntu</li>
+                    <li>Installation / redémarrage systemd <code>gisebs-pay-gateway</code></li>
+                    <li>Healthcheck <code>GET /health</code></li>
+                    <li>Migrations EF Core au démarrage</li>
+                </ol>
+            </div>
+        </div>
+
+        <h5>Secrets GitHub requis (minimum 2)</h5>
+        <table class="table table-sm">
+            <thead><tr><th>Secret</th><th>Contenu</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td><code>GISEBSPAY_SSH_PRIVATE_KEY</code><br><small>ou <code>SSH_PRIVATE_KEY_UBUNTU1</code> (org)</small></td>
+                    <td>Clé privée SSH multiligne (<code>cognidoc_deploy</code>)</td>
+                </tr>
+                <tr>
+                    <td><code>GISEBSPAY_CONNECTION_STRING</code><br><small>ou <code>UBUNTU1_CONNECTION_STRING</code> (org)</small></td>
+                    <td>Chaîne PostgreSQL vers <code>gisebs_pay_gateway</code></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h5 class="mt-4">Paramètres serveur (défauts workflow)</h5>
+        <table class="table table-sm">
+            <tbody>
+                <tr><td>Hôte</td><td><code>51.79.53.197</code></td></tr>
+                <tr><td>Utilisateur SSH</td><td><code>ubuntu</code></td></tr>
+                <tr><td>Répertoire app</td><td><code>/opt/apps/gisebs-pay-gateway/app</code></td></tr>
+                <tr><td>Service systemd</td><td><code>gisebs-pay-gateway</code></td></tr>
+                <tr><td>Port d'écoute</td><td><code>@Model.ListenPort</code> (<code>http://0.0.0.0:@Model.ListenPort</code>)</td></tr>
+            </tbody>
+        </table>
+
+        <h5 class="mt-4">Première installation serveur</h5>
+        <pre class="bg-light p-3 rounded"><code>sudo mkdir -p /opt/apps/gisebs-pay-gateway
+sudo chown ubuntu:ubuntu /opt/apps/gisebs-pay-gateway</code></pre>
+
+        <h5 class="mt-4">Nginx Proxy Manager</h5>
+        <ul>
+            <li>Scheme : <strong>http</strong> (pas https vers le backend)</li>
+            <li>Forward port : <code>@Model.ListenPort</code></li>
+            <li>NPM natif → <code>127.0.0.1</code> · NPM Docker → IP du serveur</li>
+            <li>SSL Let's Encrypt activé côté NPM</li>
+        </ul>
+
+        <h5 class="mt-4">Déploiement manuel (secours)</h5>
+        <pre class="bg-light p-3 rounded"><code>deploy\deploy.bat          # Windows → Ubuntu
+./deploy/deploy.sh           # Sur le serveur après git pull</code></pre>
+
+        <p class="text-muted small">Documentation complète dans le dépôt : <code>deploy/README.md</code> et <code>deploy/GITHUB-SECRETS.md</code></p>
+    </div>
+
+    <div class="tab-pane fade" id="stripe" role="tabpanel">
+        <h5>Configuration des clés</h5>
+        <p>Saisissez les clés Stripe dans <a asp-page="/Admin/StripeSettings/Index">Stripe</a> (publishable, secret, webhook secret).</p>
+
+        <h5 class="mt-4">Webhook Stripe</h5>
+        <p>URL à configurer dans le dashboard Stripe :</p>
+        <pre class="bg-light p-3 rounded"><code>https://pay.gisebs.com/api/webhooks/stripe</code></pre>
+        <p>Événements à activer :</p>
+        <ul>
+            <li><code>checkout.session.completed</code></li>
+            <li><code>invoice.paid</code></li>
+            <li><code>invoice.payment_failed</code></li>
+            <li><code>customer.subscription.updated</code></li>
+            <li><code>customer.subscription.deleted</code></li>
+        </ul>
+        <p>Copiez le <strong>Signing secret</strong> généré par Stripe dans la page de configuration admin.</p>
+
+        <div class="alert alert-warning mt-3 mb-0">
+            Les clés secrètes Stripe ne sont jamais exposées dans les logs ni renvoyées par l'API. Seul le dashboard admin permet de les modifier.
+        </div>
+    </div>
+</div>
