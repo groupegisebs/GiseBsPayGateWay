@@ -7,6 +7,7 @@ using GiseBsPayGateway.Middleware;
 using GiseBsPayGateway.Options;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -52,16 +53,14 @@ builder.Services.AddIdentity<AdminUser, IdentityRole>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
-builder.Services.ConfigureApplicationCookie(options =>
-{
-    options.LoginPath = "/Account/Login";
-    options.AccessDeniedPath = "/Account/AccessDenied";
-    options.SlidingExpiration = true;
-    options.ExpireTimeSpan = TimeSpan.FromHours(8);
-});
-
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-builder.Services.AddAuthentication()
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultChallengeScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultSignInScheme = IdentityConstants.ApplicationScheme;
+    })
     .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
@@ -75,6 +74,21 @@ builder.Services.AddAuthentication()
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey))
         };
     });
+
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/Account/Login";
+    options.AccessDeniedPath = "/Account/AccessDenied";
+    options.SlidingExpiration = true;
+    options.ExpireTimeSpan = TimeSpan.FromHours(8);
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddAuthorization(options =>
 {
@@ -104,6 +118,7 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.AllowAnonymousToPage("/Account/Login");
     options.Conventions.AllowAnonymousToPage("/Account/AccessDenied");
     options.Conventions.AllowAnonymousToPage("/Index");
+    options.Conventions.AllowAnonymousToPage("/Error");
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -111,7 +126,17 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-await DbSeeder.SeedAsync(app.Services);
+Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "logs"));
+
+try
+{
+    await DbSeeder.SeedAsync(app.Services);
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Échec du seed / migrations au démarrage");
+    throw;
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -120,10 +145,23 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseExceptionHandler("/Error");
+    app.UseExceptionHandler(errorApp =>
+    {
+        errorApp.Run(async context =>
+        {
+            var ex = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            if (ex is not null)
+            {
+                Log.Error(ex, "Erreur non gérée {Path}", context.Request.Path);
+            }
+
+            context.Response.Redirect("/Error");
+        });
+    });
     app.UseHsts();
 }
 
+app.UseForwardedHeaders();
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
 app.UseIpRateLimiting();
