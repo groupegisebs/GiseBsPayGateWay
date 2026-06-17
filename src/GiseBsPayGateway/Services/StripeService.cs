@@ -144,7 +144,8 @@ public class StripeService : IStripeService
 
         if (billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1))
         {
-            await ApplyStripeCustomerAddressAsync(stripeCustomerId, billingAddress, cancellationToken);
+            var formattedAddress = StripeAddressFormatter.Format(billingAddress);
+            await ApplyStripeCustomerAddressAsync(stripeCustomerId, formattedAddress, cancellationToken);
         }
 
         var sessionService = new SessionService();
@@ -228,12 +229,12 @@ public class StripeService : IStripeService
         {
             Address = new AddressOptions
             {
-                Line1 = billingAddress.Line1.Trim(),
-                Line2 = billingAddress.Line2?.Trim(),
-                City = billingAddress.City.Trim(),
-                State = billingAddress.State?.Trim(),
-                PostalCode = billingAddress.PostalCode.Trim(),
-                Country = billingAddress.Country.Trim().ToUpperInvariant()
+                Line1 = billingAddress.Line1,
+                Line2 = billingAddress.Line2,
+                City = billingAddress.City,
+                State = billingAddress.State,
+                PostalCode = billingAddress.PostalCode,
+                Country = billingAddress.Country
             }
         }, cancellationToken: cancellationToken);
     }
