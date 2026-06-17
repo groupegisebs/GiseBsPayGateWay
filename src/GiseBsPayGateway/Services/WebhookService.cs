@@ -94,6 +94,18 @@ public class WebhookService : IWebhookService
                 case EventTypes.CheckoutSessionCompleted:
                     await HandleCheckoutCompletedAsync(stripeEvent, cancellationToken);
                     break;
+                case EventTypes.CheckoutSessionAsyncPaymentSucceeded:
+                    await HandleCheckoutAsyncPaymentSucceededAsync(stripeEvent, cancellationToken);
+                    break;
+                case EventTypes.CheckoutSessionAsyncPaymentFailed:
+                    await HandleCheckoutAsyncPaymentFailedAsync(stripeEvent, cancellationToken);
+                    break;
+                case EventTypes.PaymentIntentSucceeded:
+                    await HandlePaymentIntentSucceededAsync(stripeEvent, cancellationToken);
+                    break;
+                case EventTypes.PaymentIntentPaymentFailed:
+                    await HandlePaymentIntentPaymentFailedAsync(stripeEvent, cancellationToken);
+                    break;
                 case EventTypes.InvoicePaid:
                     await HandleInvoicePaidAsync(stripeEvent, cancellationToken);
                     break;
@@ -134,18 +146,7 @@ public class WebhookService : IWebhookService
         var session = stripeEvent.Data.Object as Session
             ?? throw new InvalidOperationException("Objet session invalide.");
 
-        if (!session.Metadata.TryGetValue("payment_code", out var paymentCode))
-        {
-            return;
-        }
-
-        var payment = await _db.PaymentTransactions
-            .Include(x => x.PricingPlan)
-            .Include(x => x.Customer)
-            .Include(x => x.Product)
-            .Include(x => x.ClientApplication)
-            .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
-
+        var payment = await LoadPaymentForSessionAsync(session, cancellationToken);
         if (payment is null)
         {
             return;
@@ -153,58 +154,248 @@ public class WebhookService : IWebhookService
 
         payment.StripeCheckoutSessionId = session.Id;
         payment.StripePaymentIntentId = session.PaymentIntentId;
-        payment.Status = PaymentStatus.Succeeded;
-        payment.PaidAt = DateTime.UtcNow;
         payment.UpdatedAt = DateTime.UtcNow;
+
+        if (!StripePaymentVerification.IsCheckoutSessionPaymentConfirmed(session))
+        {
+            _logger.LogInformation(
+                "Session {SessionId} complétée mais non payée (payment_status={PaymentStatus}); en attente de confirmation",
+                session.Id,
+                session.PaymentStatus);
+            await _db.SaveChangesAsync(cancellationToken);
+            return;
+        }
 
         var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
             ?? session;
-        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, resolvedSession);
-        if (payment.TaxAmount is null or 0 && !string.IsNullOrWhiteSpace(payment.BillingCountry))
+
+        if (!await IsPaymentIntentConfirmedAsync(resolvedSession.PaymentIntentId, cancellationToken))
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await FinalizeSuccessfulCheckoutAsync(payment, resolvedSession, cancellationToken);
+    }
+
+    private async Task HandleCheckoutAsyncPaymentSucceededAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        var session = stripeEvent.Data.Object as Session
+            ?? throw new InvalidOperationException("Objet session invalide.");
+
+        var payment = await LoadPaymentForSessionAsync(session, cancellationToken);
+        if (payment is null)
+        {
+            return;
+        }
+
+        if (!StripePaymentVerification.IsCheckoutSessionPaymentConfirmed(session))
         {
             _logger.LogWarning(
-                "Paiement {PaymentCode} sans taxes Stripe (pays={Country}, province={State}, total={Total}, subtotal={Subtotal})",
-                paymentCode,
-                payment.BillingCountry,
-                payment.BillingState,
-                resolvedSession.AmountTotal,
-                resolvedSession.AmountSubtotal);
+                "async_payment_succeeded reçu pour session {SessionId} avec payment_status={PaymentStatus}",
+                session.Id,
+                session.PaymentStatus);
+            return;
         }
 
-        var balanceDetails = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
-            session.PaymentIntentId,
-            cancellationToken);
-        StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, balanceDetails);
+        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
+            ?? session;
 
-        if (payment.PricingPlan.BillingInterval != BillingInterval.OneTime && !string.IsNullOrWhiteSpace(session.SubscriptionId))
+        if (!await IsPaymentIntentConfirmedAsync(resolvedSession.PaymentIntentId, cancellationToken))
         {
-            var subscription = new SubscriptionEntity
-            {
-                ClientApplicationId = payment.ClientApplicationId,
-                CustomerId = payment.CustomerId,
-                ProductId = payment.ProductId,
-                PricingPlanId = payment.PricingPlanId,
-                SubscriptionCode = $"SUB-{payment.PaymentCode[4..]}",
-                StripeSubscriptionId = session.SubscriptionId,
-                Status = SubscriptionStatus.Active
-            };
-            payment.Subscription = subscription;
-            _db.Subscriptions.Add(subscription);
+            return;
         }
 
+        await FinalizeSuccessfulCheckoutAsync(payment, resolvedSession, cancellationToken);
+    }
+
+    private async Task HandleCheckoutAsyncPaymentFailedAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        var session = stripeEvent.Data.Object as Session
+            ?? throw new InvalidOperationException("Objet session invalide.");
+
+        var payment = await LoadPaymentForSessionAsync(session, cancellationToken);
+        if (payment is null)
+        {
+            return;
+        }
+
+        await HandlePaymentFailureAsync(
+            payment,
+            ResolveTransactionReference(session.PaymentIntentId, session.Id),
+            cancellationToken);
+    }
+
+    private async Task HandlePaymentIntentSucceededAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        var paymentIntent = stripeEvent.Data.Object as PaymentIntent
+            ?? throw new InvalidOperationException("Objet PaymentIntent invalide.");
+
+        if (!StripePaymentVerification.IsPaymentIntentSucceeded(paymentIntent.Status))
+        {
+            return;
+        }
+
+        var payment = await FindPaymentByPaymentIntentAsync(paymentIntent, cancellationToken);
+        if (payment is null || payment.Status == PaymentStatus.Succeeded)
+        {
+            return;
+        }
+
+        Session? session = null;
+        if (!string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        {
+            session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
+                payment.StripeCheckoutSessionId,
+                cancellationToken);
+        }
+
+        if (session is not null && StripePaymentVerification.IsCheckoutSessionPaymentConfirmed(session))
+        {
+            await FinalizeSuccessfulCheckoutAsync(payment, session, cancellationToken);
+            return;
+        }
+
+        await FinalizeSuccessfulPaymentIntentAsync(payment, paymentIntent, cancellationToken);
+    }
+
+    private async Task HandlePaymentIntentPaymentFailedAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        var paymentIntent = stripeEvent.Data.Object as PaymentIntent
+            ?? throw new InvalidOperationException("Objet PaymentIntent invalide.");
+
+        var payment = await FindPaymentByPaymentIntentAsync(paymentIntent, cancellationToken);
+        if (payment is null)
+        {
+            return;
+        }
+
+        await HandlePaymentFailureAsync(payment, paymentIntent.Id, cancellationToken);
+    }
+
+    private async Task FinalizeSuccessfulCheckoutAsync(
+        Entities.PaymentTransaction payment,
+        Session session,
+        CancellationToken cancellationToken)
+    {
+        if (payment.Status == PaymentStatus.Succeeded)
+        {
+            await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, session, cancellationToken);
+            return;
+        }
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            payment.StripeCheckoutSessionId = session.Id;
+            payment.StripePaymentIntentId = session.PaymentIntentId;
+            payment.Status = PaymentStatus.Succeeded;
+            payment.PaidAt = DateTime.UtcNow;
+            payment.UpdatedAt = DateTime.UtcNow;
+
+            StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+            if (payment.TaxAmount is null or 0 && !string.IsNullOrWhiteSpace(payment.BillingCountry))
+            {
+                _logger.LogWarning(
+                    "Paiement {PaymentCode} sans taxes Stripe (pays={Country}, province={State}, total={Total}, subtotal={Subtotal})",
+                    payment.PaymentCode,
+                    payment.BillingCountry,
+                    payment.BillingState,
+                    session.AmountTotal,
+                    session.AmountSubtotal);
+            }
+
+            var balanceDetails = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
+                session.PaymentIntentId,
+                cancellationToken);
+            StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, balanceDetails);
+
+            if (payment.PricingPlan.BillingInterval != BillingInterval.OneTime && !string.IsNullOrWhiteSpace(session.SubscriptionId))
+            {
+                var subscription = new SubscriptionEntity
+                {
+                    ClientApplicationId = payment.ClientApplicationId,
+                    CustomerId = payment.CustomerId,
+                    ProductId = payment.ProductId,
+                    PricingPlanId = payment.PricingPlanId,
+                    SubscriptionCode = $"SUB-{payment.PaymentCode[4..]}",
+                    StripeSubscriptionId = session.SubscriptionId,
+                    Status = SubscriptionStatus.Active
+                };
+                payment.Subscription = subscription;
+                _db.Subscriptions.Add(subscription);
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, session, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+
+        await _invoiceService.SaveFromCheckoutCompletedAsync(session, payment, cancellationToken);
+    }
+
+    private async Task FinalizeSuccessfulPaymentIntentAsync(
+        Entities.PaymentTransaction payment,
+        PaymentIntent paymentIntent,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            payment.StripePaymentIntentId = paymentIntent.Id;
+            payment.Status = PaymentStatus.Succeeded;
+            payment.PaidAt = DateTime.UtcNow;
+            payment.UpdatedAt = DateTime.UtcNow;
+
+            var balanceDetails = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
+                paymentIntent.Id,
+                cancellationToken);
+            StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, balanceDetails);
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task HandlePaymentFailureAsync(
+        Entities.PaymentTransaction payment,
+        string? transactionReference,
+        CancellationToken cancellationToken)
+    {
+        payment.Status = PaymentStatus.Failed;
+        payment.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
-        await _invoiceService.SaveFromCheckoutCompletedAsync(resolvedSession, payment, cancellationToken);
-        await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, resolvedSession, cancellationToken);
+
+        await _collectedTaxService.RemoveForFailedPaymentAsync(
+            payment.Id,
+            payment.PaymentCode,
+            transactionReference,
+            cancellationToken);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, CancellationToken cancellationToken)
     {
         var invoice = stripeEvent.Data.Object as Invoice;
+        if (invoice is null || !StripePaymentVerification.IsInvoicePaid(invoice))
+        {
+            return;
+        }
+
         var subscriptionId = GetInvoiceSubscriptionId(invoice);
         if (subscriptionId is null)
         {
-            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
-            await TrySaveCollectedTaxFromInvoiceAsync(invoice!, null, cancellationToken);
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice, InvoiceStatus.Paid, cancellationToken);
+            await TrySaveCollectedTaxFromInvoiceAsync(invoice, null, cancellationToken);
             return;
         }
 
@@ -213,13 +404,13 @@ public class WebhookService : IWebhookService
 
         if (subscription is null)
         {
-            await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
-            await TrySaveCollectedTaxFromInvoiceAsync(invoice!, null, cancellationToken);
+            await _invoiceService.SaveFromStripeInvoiceAsync(invoice, InvoiceStatus.Paid, cancellationToken);
+            await TrySaveCollectedTaxFromInvoiceAsync(invoice, null, cancellationToken);
             return;
         }
 
         subscription.Status = SubscriptionStatus.Active;
-        subscription.CurrentPeriodStart = invoice!.PeriodStart;
+        subscription.CurrentPeriodStart = invoice.PeriodStart;
         subscription.CurrentPeriodEnd = invoice.PeriodEnd;
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
@@ -237,6 +428,7 @@ public class WebhookService : IWebhookService
         if (subscriptionId is null)
         {
             await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
+            await CleanupTaxForFailedInvoiceAsync(invoice!, cancellationToken);
             return;
         }
 
@@ -246,6 +438,7 @@ public class WebhookService : IWebhookService
         if (subscription is null)
         {
             await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
+            await CleanupTaxForFailedInvoiceAsync(invoice!, cancellationToken);
             return;
         }
 
@@ -253,6 +446,32 @@ public class WebhookService : IWebhookService
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Failed, cancellationToken);
+
+        var payment = await _db.PaymentTransactions
+            .FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken);
+        if (payment is not null)
+        {
+            await HandlePaymentFailureAsync(
+                payment,
+                GetPaymentIntentIdFromInvoice(invoice!) ?? invoice!.Id,
+                cancellationToken);
+        }
+        else
+        {
+            await CleanupTaxForFailedInvoiceAsync(invoice!, cancellationToken);
+        }
+    }
+
+    private async Task CleanupTaxForFailedInvoiceAsync(Invoice invoice, CancellationToken cancellationToken)
+    {
+        var transactionReference = GetPaymentIntentIdFromInvoice(invoice) ?? invoice.Id;
+        string? paymentCode = invoice.Metadata.TryGetValue("payment_code", out var code) ? code : null;
+
+        await _collectedTaxService.RemoveForFailedPaymentAsync(
+            null,
+            paymentCode,
+            transactionReference,
+            cancellationToken);
     }
 
     private async Task HandleSubscriptionChangedAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -314,7 +533,98 @@ public class WebhookService : IWebhookService
         }
     }
 
+    private async Task<Entities.PaymentTransaction?> LoadPaymentForSessionAsync(
+        Session session,
+        CancellationToken cancellationToken)
+    {
+        if (!session.Metadata.TryGetValue("payment_code", out var paymentCode))
+        {
+            return null;
+        }
+
+        return await _db.PaymentTransactions
+            .Include(x => x.PricingPlan)
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
+    }
+
+    private async Task<Entities.PaymentTransaction?> FindPaymentByPaymentIntentAsync(
+        PaymentIntent paymentIntent,
+        CancellationToken cancellationToken)
+    {
+        var payment = await _db.PaymentTransactions
+            .Include(x => x.PricingPlan)
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.StripePaymentIntentId == paymentIntent.Id, cancellationToken);
+
+        if (payment is not null)
+        {
+            return payment;
+        }
+
+        if (paymentIntent.Metadata.TryGetValue("payment_code", out var paymentCode))
+        {
+            return await _db.PaymentTransactions
+                .Include(x => x.PricingPlan)
+                .Include(x => x.Customer)
+                .Include(x => x.Product)
+                .Include(x => x.ClientApplication)
+                .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private async Task<bool> IsPaymentIntentConfirmedAsync(
+        string? paymentIntentId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId))
+        {
+            _logger.LogWarning("Session sans PaymentIntent; confirmation de paiement impossible");
+            return false;
+        }
+
+        var intentStatus = await _stripePaymentDetailsService.GetPaymentIntentStatusAsync(
+            paymentIntentId,
+            cancellationToken);
+
+        if (StripePaymentVerification.IsPaymentIntentSucceeded(intentStatus))
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "PaymentIntent {PaymentIntentId} non réussi (status={Status})",
+            paymentIntentId,
+            intentStatus);
+        return false;
+    }
+
+    private static string ResolveTransactionReference(string? paymentIntentId, string sessionId) =>
+        string.IsNullOrWhiteSpace(paymentIntentId) ? sessionId : paymentIntentId;
+
     private static string? GetInvoiceSubscriptionId(Invoice? invoice) =>
         invoice?.Parent?.SubscriptionDetails?.SubscriptionId
         ?? invoice?.Parent?.SubscriptionDetails?.Subscription?.Id;
+
+    private static string? GetPaymentIntentIdFromInvoice(Invoice stripeInvoice)
+    {
+        var payment = stripeInvoice.Payments?.Data?.FirstOrDefault();
+        if (payment?.Payment?.PaymentIntentId is { } paymentIntentId)
+        {
+            return paymentIntentId;
+        }
+
+        if (payment?.Payment?.PaymentIntent is { Id: var expandedId })
+        {
+            return expandedId;
+        }
+
+        return null;
+    }
 }

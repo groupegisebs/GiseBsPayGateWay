@@ -23,6 +23,10 @@ public interface IStripePaymentDetailsService
     Task<string?> GetStripeTaxTransactionIdAsync(
         string? paymentIntentId,
         CancellationToken cancellationToken = default);
+
+    Task<string?> GetPaymentIntentStatusAsync(
+        string? paymentIntentId,
+        CancellationToken cancellationToken = default);
 }
 
 public class StripePaymentDetailsService : IStripePaymentDetailsService
@@ -163,6 +167,38 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Impossible de récupérer la tax transaction pour {PaymentIntentId}", paymentIntentId);
+            return null;
+        }
+    }
+
+    public async Task<string?> GetPaymentIntentStatusAsync(
+        string? paymentIntentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId))
+        {
+            return null;
+        }
+
+        try
+        {
+            var settings = await _stripeSettings.GetActiveAsync(cancellationToken);
+            if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
+            {
+                return null;
+            }
+
+            StripeConfiguration.ApiKey = settings.SecretKey;
+
+            var intent = await new PaymentIntentService().GetAsync(
+                paymentIntentId,
+                cancellationToken: cancellationToken);
+
+            return intent.Status;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de récupérer le statut du PaymentIntent {PaymentIntentId}", paymentIntentId);
             return null;
         }
     }

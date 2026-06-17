@@ -97,7 +97,9 @@ curl -X POST https://pay.gisebs.com/api/checkout/session \
 
 ### Taxes collectées
 
-Lors d'un paiement réussi (`checkout.session.completed` ou `invoice.paid`), Pay Gateway enregistre une fiche `CollectedTaxRecord` :
+**Taxes collectées uniquement sur paiement Stripe confirmé (Succeeded/paid).** Aucun enregistrement n'est créé lors de l'estimation (`POST /api/tax/calculate`), à la création de session Checkout, ni sur échec de paiement.
+
+Lors d'un paiement réussi (`checkout.session.completed` avec `payment_status=paid`, `payment_intent.succeeded`, ou `invoice.paid`), Pay Gateway enregistre une fiche `CollectedTaxRecord` :
 
 - date de collecte (`collectedAt`)
 - adresse de facturation complète
@@ -189,6 +191,10 @@ dotnet run
 
 Événements recommandés :
 - `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
 - `invoice.paid`
 - `invoice.payment_failed`
 - `customer.subscription.updated`
