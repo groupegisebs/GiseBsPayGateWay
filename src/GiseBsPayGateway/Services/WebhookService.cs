@@ -40,12 +40,28 @@ public class WebhookService : IWebhookService
         Event stripeEvent;
         try
         {
-            stripeEvent = EventUtility.ConstructEvent(json, signatureHeader, settings.WebhookSecret);
+            // L'endpoint webhook Stripe peut utiliser une api_version antérieure (ex. 2024-06-20)
+            // alors que Stripe.net 52 attend 2026-05-27.dahlia — sans ce flag, ConstructEvent lève
+            // une StripeException (ligne ~167) traitée à tort comme une signature invalide (401).
+            stripeEvent = EventUtility.ConstructEvent(
+                json,
+                signatureHeader,
+                settings.WebhookSecret,
+                throwOnApiVersionMismatch: false);
         }
-        catch (Exception ex)
+        catch (StripeException ex) when (
+            ex.Message.Contains("signature", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("Stripe-Signature", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("webhook secret", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("timestamp", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(ex, "Signature webhook Stripe invalide");
             throw new UnauthorizedAccessException("Signature webhook invalide.");
+        }
+        catch (StripeException ex)
+        {
+            _logger.LogError(ex, "Erreur Stripe lors de la validation du webhook");
+            throw;
         }
 
         if (await _db.StripeWebhookEvents.AnyAsync(x => x.StripeEventId == stripeEvent.Id, cancellationToken))
