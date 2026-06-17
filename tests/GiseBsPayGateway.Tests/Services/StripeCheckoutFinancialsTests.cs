@@ -37,6 +37,23 @@ public class StripeCheckoutFinancialsTests
     }
 
     [Fact]
+    public void ApplySessionTaxToPayment_DerivesTaxFromTotalMinusSubtotal()
+    {
+        var payment = new PaymentTransaction { Amount = 100m };
+        var session = new Session
+        {
+            AmountSubtotal = 10000,
+            AmountTotal = 11300
+        };
+
+        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+
+        Assert.Equal(100m, payment.AmountSubtotal);
+        Assert.Equal(13m, payment.TaxAmount);
+        Assert.Equal(113m, payment.GrossAmount);
+    }
+
+    [Fact]
     public void ApplyBalanceTransactionToPayment_StoresFeeNetAndBalanceTransactionId()
     {
         var payment = new PaymentTransaction { Amount = 100m };

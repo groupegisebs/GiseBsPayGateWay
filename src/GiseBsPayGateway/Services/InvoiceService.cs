@@ -286,12 +286,32 @@ public class InvoiceService : IInvoiceService
 
     private async Task BackfillPaymentFinancialsAsync(PaymentTransaction payment, CancellationToken cancellationToken)
     {
+        var updated = false;
+
+        if ((!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue) &&
+            !string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        {
+            var session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
+                payment.StripeCheckoutSessionId,
+                cancellationToken);
+            if (session is not null)
+            {
+                StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+                updated = true;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(payment.StripePaymentIntentId) && !payment.StripeFee.HasValue)
         {
             var details = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
                 payment.StripePaymentIntentId,
                 cancellationToken);
             StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, details);
+            updated = true;
+        }
+
+        if (updated)
+        {
             payment.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
         }

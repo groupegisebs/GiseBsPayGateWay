@@ -1,4 +1,5 @@
 using Stripe;
+using Stripe.Checkout;
 
 namespace GiseBsPayGateway.Services;
 
@@ -12,6 +13,10 @@ public interface IStripePaymentDetailsService
 {
     Task<StripeBalanceTransactionDetails?> GetBalanceTransactionDetailsAsync(
         string? paymentIntentId,
+        CancellationToken cancellationToken = default);
+
+    Task<Session?> GetCheckoutSessionAsync(
+        string? sessionId,
         CancellationToken cancellationToken = default);
 }
 
@@ -84,6 +89,34 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Impossible de récupérer la balance transaction pour {PaymentIntentId}", paymentIntentId);
+            return null;
+        }
+    }
+
+    public async Task<Session?> GetCheckoutSessionAsync(
+        string? sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        try
+        {
+            var settings = await _stripeSettings.GetActiveAsync(cancellationToken);
+            if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
+            {
+                return null;
+            }
+
+            StripeConfiguration.ApiKey = settings.SecretKey;
+
+            return await new SessionService().GetAsync(sessionId, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de récupérer la session Checkout {SessionId}", sessionId);
             return null;
         }
     }

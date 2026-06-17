@@ -7,28 +7,35 @@ public static class StripeCheckoutFinancials
 {
     public static void ApplySessionTaxToPayment(PaymentTransaction payment, Session session)
     {
+        long? subtotalCents = session.AmountSubtotal is > 0 ? session.AmountSubtotal : null;
+        long? totalCents = session.AmountTotal is > 0 ? session.AmountTotal : null;
+
+        if (subtotalCents is > 0)
+        {
+            payment.AmountSubtotal = subtotalCents.Value / 100m;
+        }
+
         if (session.TotalDetails?.AmountTax is long taxCents && taxCents > 0)
         {
             payment.TaxAmount = taxCents / 100m;
         }
-
-        if (session.AmountSubtotal is long subtotalCents && subtotalCents > 0)
+        else if (totalCents is > 0 && subtotalCents is > 0 && totalCents > subtotalCents)
         {
-            payment.AmountSubtotal = subtotalCents / 100m;
+            payment.TaxAmount = (totalCents.Value - subtotalCents.Value) / 100m;
         }
 
-        if (session.AmountTotal is long totalCents && totalCents > 0)
+        if (totalCents is > 0)
         {
-            var gross = totalCents / 100m;
-            if (gross != payment.Amount)
+            var gross = totalCents.Value / 100m;
+            if (!payment.GrossAmount.HasValue || payment.GrossAmount.Value != gross)
             {
                 payment.GrossAmount = gross;
             }
         }
 
         var address = session.CustomerDetails?.Address;
-        payment.BillingCountry = address?.Country;
-        payment.BillingState = address?.State;
+        payment.BillingCountry ??= address?.Country;
+        payment.BillingState ??= address?.State;
     }
 
     public static void ApplyBalanceTransactionToPayment(

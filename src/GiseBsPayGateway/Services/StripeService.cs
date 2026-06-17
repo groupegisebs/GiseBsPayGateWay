@@ -38,17 +38,20 @@ public class StripeService : IStripeService
 
     public async Task<string> EnsureStripeProductAsync(ProductEntity product, CancellationToken cancellationToken = default)
     {
+        await ConfigureStripeAsync(cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(product.StripeProductId))
         {
+            await EnsureStripeProductTaxCodeAsync(product.StripeProductId, cancellationToken);
             return product.StripeProductId;
         }
 
-        await ConfigureStripeAsync(cancellationToken);
         var service = new ProductService();
         var stripeProduct = await service.CreateAsync(new ProductCreateOptions
         {
             Name = product.Name,
             Description = product.Description,
+            TaxCode = StripeTaxDefaults.DigitalProductTaxCode,
             Metadata = new Dictionary<string, string>
             {
                 ["product_code"] = product.ProductCode,
@@ -64,18 +67,21 @@ public class StripeService : IStripeService
 
     public async Task<string> EnsureStripePriceAsync(PricingPlan plan, string stripeProductId, CancellationToken cancellationToken = default)
     {
+        await ConfigureStripeAsync(cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
         {
+            await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
             return plan.StripePriceId;
         }
 
-        await ConfigureStripeAsync(cancellationToken);
         var service = new PriceService();
         var options = new PriceCreateOptions
         {
             Product = stripeProductId,
             UnitAmount = (long)(plan.Amount * 100),
             Currency = plan.Currency.ToLowerInvariant(),
+            TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive,
             Metadata = new Dictionary<string, string>
             {
                 ["plan_code"] = plan.PlanCode
@@ -240,6 +246,37 @@ public class StripeService : IStripeService
                 PostalCode = billingAddress.PostalCode,
                 Country = billingAddress.Country
             }
+        }, cancellationToken: cancellationToken);
+    }
+
+    private static async Task EnsureStripeProductTaxCodeAsync(string stripeProductId, CancellationToken cancellationToken)
+    {
+        var service = new ProductService();
+        var product = await service.GetAsync(stripeProductId, cancellationToken: cancellationToken);
+        if (product.TaxCode is not null)
+        {
+            return;
+        }
+
+        await service.UpdateAsync(stripeProductId, new ProductUpdateOptions
+        {
+            TaxCode = StripeTaxDefaults.DigitalProductTaxCode
+        }, cancellationToken: cancellationToken);
+    }
+
+    private static async Task EnsureStripePriceTaxBehaviorAsync(string stripePriceId, CancellationToken cancellationToken)
+    {
+        var service = new PriceService();
+        var price = await service.GetAsync(stripePriceId, cancellationToken: cancellationToken);
+        if (!string.IsNullOrWhiteSpace(price.TaxBehavior) &&
+            !string.Equals(price.TaxBehavior, "unspecified", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await service.UpdateAsync(stripePriceId, new PriceUpdateOptions
+        {
+            TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive
         }, cancellationToken: cancellationToken);
     }
 

@@ -154,7 +154,20 @@ public class WebhookService : IWebhookService
         payment.PaidAt = DateTime.UtcNow;
         payment.UpdatedAt = DateTime.UtcNow;
 
-        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
+            ?? session;
+        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, resolvedSession);
+        if (payment.TaxAmount is null or 0 && !string.IsNullOrWhiteSpace(payment.BillingCountry))
+        {
+            _logger.LogWarning(
+                "Paiement {PaymentCode} sans taxes Stripe (pays={Country}, province={State}, total={Total}, subtotal={Subtotal})",
+                paymentCode,
+                payment.BillingCountry,
+                payment.BillingState,
+                resolvedSession.AmountTotal,
+                resolvedSession.AmountSubtotal);
+        }
+
         var balanceDetails = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
             session.PaymentIntentId,
             cancellationToken);
@@ -177,7 +190,7 @@ public class WebhookService : IWebhookService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
-        await _invoiceService.SaveFromCheckoutCompletedAsync(session, payment, cancellationToken);
+        await _invoiceService.SaveFromCheckoutCompletedAsync(resolvedSession, payment, cancellationToken);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, CancellationToken cancellationToken)
