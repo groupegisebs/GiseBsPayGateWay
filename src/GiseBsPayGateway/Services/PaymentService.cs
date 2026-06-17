@@ -9,12 +9,18 @@ public class PaymentService : IPaymentService
 {
     private readonly ApplicationDbContext _db;
     private readonly IStripeService _stripeService;
+    private readonly IStripeSettingsProvider _stripeSettings;
     private readonly IAuditService _auditService;
 
-    public PaymentService(ApplicationDbContext db, IStripeService stripeService, IAuditService auditService)
+    public PaymentService(
+        ApplicationDbContext db,
+        IStripeService stripeService,
+        IStripeSettingsProvider stripeSettings,
+        IAuditService auditService)
     {
         _db = db;
         _stripeService = stripeService;
+        _stripeSettings = stripeSettings;
         _auditService = auditService;
     }
 
@@ -72,16 +78,24 @@ public class PaymentService : IPaymentService
         _db.PaymentTransactions.Add(payment);
         await _db.SaveChangesAsync(cancellationToken);
 
-        var (sessionId, url) = await _stripeService.CreateCheckoutSessionAsync(payment, customer, plan, request.SuccessUrl, request.CancelUrl, cancellationToken);
+        var (sessionId, url, clientSecret) = await _stripeService.CreateCheckoutSessionAsync(
+            payment, customer, plan, request.SuccessUrl, request.CancelUrl, request.TrialDays, request.Embedded, cancellationToken);
 
         payment.StripeCheckoutSessionId = sessionId;
         payment.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync("CheckoutSessionCreated", nameof(PaymentTransaction), payment.Id.ToString(), true,
-            $"PaymentCode={paymentCode}", app.AppCode);
+            $"PaymentCode={paymentCode};Embedded={request.Embedded}", app.AppCode);
 
-        return new DTOs.CheckoutSessionResponse(paymentCode, url, sessionId, payment.Status.ToString());
+        var stripeSettings = await _stripeSettings.GetActiveAsync(cancellationToken);
+        return new DTOs.CheckoutSessionResponse(
+            paymentCode,
+            url ?? string.Empty,
+            sessionId,
+            payment.Status.ToString(),
+            clientSecret,
+            request.Embedded ? stripeSettings?.PublishableKey : null);
     }
 
     public async Task<DTOs.PaymentResponse?> GetPaymentByCodeAsync(ClientApplication app, string paymentCode, CancellationToken cancellationToken = default)

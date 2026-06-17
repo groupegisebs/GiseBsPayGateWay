@@ -18,10 +18,19 @@ public class CheckoutController : ControllerBase
     }
 
     [HttpPost("session")]
-    public async Task<ActionResult<CheckoutSessionResponse>> CreateSession([FromBody] CreateCheckoutSessionRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<CheckoutSessionResponse>> CreateSession(
+        [FromBody] CreateCheckoutSessionRequest request,
+        CancellationToken cancellationToken)
     {
         var app = HttpContext.GetClientApplicationContext().Application;
-        var result = await _paymentService.CreateCheckoutSessionAsync(app, request, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _paymentService.CreateCheckoutSessionAsync(app, request, cancellationToken);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiErrorResponse(ex.Message, null));
+        }
     }
 }

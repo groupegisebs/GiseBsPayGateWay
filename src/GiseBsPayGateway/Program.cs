@@ -159,6 +159,18 @@ else
                 Log.Error(ex, "Erreur non gérée {Path}", context.Request.Path);
             }
 
+            if (context.Request.Path.StartsWithSegments("/api"))
+            {
+                context.Response.StatusCode = ex is InvalidOperationException
+                    ? StatusCodes.Status400BadRequest
+                    : StatusCodes.Status500InternalServerError;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsJsonAsync(new DTOs.ApiErrorResponse(
+                    ex?.Message ?? "Erreur interne Pay Gateway.",
+                    null));
+                return;
+            }
+
             context.Response.Redirect("/Error");
         });
     });

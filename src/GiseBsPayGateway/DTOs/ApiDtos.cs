@@ -9,13 +9,17 @@ public record CreateCheckoutSessionRequest(
     string PlanCode,
     string SuccessUrl,
     string CancelUrl,
-    string? MetadataJson);
+    string? MetadataJson,
+    int? TrialDays,
+    bool Embedded = false);
 
 public record CheckoutSessionResponse(
     string PaymentCode,
     string CheckoutUrl,
     string SessionId,
-    string Status);
+    string Status,
+    string? ClientSecret = null,
+    string? PublishableKey = null);
 
 public record PaymentResponse(
     string PaymentCode,

@@ -122,12 +122,14 @@ public class StripeService : IStripeService
         return stripeCustomer.Id;
     }
 
-    public async Task<(string SessionId, string Url)> CreateCheckoutSessionAsync(
+    public async Task<(string SessionId, string? Url, string? ClientSecret)> CreateCheckoutSessionAsync(
         PaymentTransaction payment,
         CustomerEntity customer,
         PricingPlan plan,
         string successUrl,
         string cancelUrl,
+        int? trialDays = null,
+        bool embedded = false,
         CancellationToken cancellationToken = default)
     {
         await ConfigureStripeAsync(cancellationToken);
@@ -141,8 +143,6 @@ public class StripeService : IStripeService
         {
             Mode = plan.BillingInterval == BillingInterval.OneTime ? "payment" : "subscription",
             Customer = stripeCustomerId,
-            SuccessUrl = successUrl,
-            CancelUrl = cancelUrl,
             LineItems =
             [
                 new SessionLineItemOptions
@@ -160,6 +160,19 @@ public class StripeService : IStripeService
             }
         };
 
+        if (embedded)
+        {
+            options.UiMode = "embedded";
+            options.ReturnUrl = successUrl.Contains("{CHECKOUT_SESSION_ID}", StringComparison.Ordinal)
+                ? successUrl
+                : AppendQuery(successUrl, "session_id={CHECKOUT_SESSION_ID}");
+        }
+        else
+        {
+            options.SuccessUrl = successUrl;
+            options.CancelUrl = cancelUrl;
+        }
+
         if (plan.BillingInterval != BillingInterval.OneTime)
         {
             options.SubscriptionData = new SessionSubscriptionDataOptions
@@ -169,11 +182,20 @@ public class StripeService : IStripeService
                     ["payment_code"] = payment.PaymentCode
                 }
             };
+
+            if (trialDays is > 0)
+                options.SubscriptionData.TrialPeriodDays = trialDays.Value;
         }
 
         var session = await sessionService.CreateAsync(options, cancellationToken: cancellationToken);
-        _logger.LogInformation("Session Stripe créée {SessionId} pour paiement {PaymentCode}", session.Id, payment.PaymentCode);
-        return (session.Id, session.Url ?? string.Empty);
+        _logger.LogInformation("Session Stripe créée {SessionId} pour paiement {PaymentCode} (embedded={Embedded})", session.Id, payment.PaymentCode, embedded);
+        return (session.Id, session.Url, session.ClientSecret);
+    }
+
+    private static string AppendQuery(string url, string query)
+    {
+        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{url}{separator}{query}";
     }
 
     public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)
