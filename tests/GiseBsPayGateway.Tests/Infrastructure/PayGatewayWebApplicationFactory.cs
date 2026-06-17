@@ -1,3 +1,4 @@
+using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -36,7 +37,8 @@ public class PayGatewayWebApplicationFactory : WebApplicationFactory<Program>
             var stripe = new Mock<IStripeService>();
             stripe.Setup(s => s.CreateCheckoutSessionAsync(
                     It.IsAny<Entities.PaymentTransaction>(), It.IsAny<Entities.Customer>(), It.IsAny<Entities.PricingPlan>(),
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+                    It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(("cs_test_integration", "https://checkout.stripe.com/test", "cs_secret_integration"));
 
             services.RemoveAll<IStripeService>();

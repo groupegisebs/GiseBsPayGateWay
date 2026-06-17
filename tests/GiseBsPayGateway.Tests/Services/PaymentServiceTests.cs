@@ -27,7 +27,8 @@ public class PaymentServiceTests
         Assert.Contains("INEXISTANT", ex.Message);
         stripe.Verify(s => s.CreateCheckoutSessionAsync(
             It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+            It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -59,7 +60,8 @@ public class PaymentServiceTests
         var stripe = new Mock<IStripeService>();
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);
@@ -83,7 +85,8 @@ public class PaymentServiceTests
         var stripe = new Mock<IStripeService>();
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), true, It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), true,
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", null, "cs_secret_1"));
 
         var settings = new Mock<IStripeSettingsProvider>();
@@ -105,6 +108,48 @@ public class PaymentServiceTests
     }
 
     [Fact]
+    public async Task CreateCheckoutSession_AvecAdresseFacturation_TransmetAdresseAuServiceStripe()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(CreateCheckoutSession_AvecAdresseFacturation_TransmetAdresseAuServiceStripe));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        await TestDbContextFactory.SeedProductPlanAsync(db, app);
+
+        var billingAddress = new BillingAddressDto(
+            "1200 rue Edison",
+            null,
+            "Québec",
+            "QC",
+            "G3K 0P6",
+            "CA");
+        var customerUpdate = new CustomerUpdateDto("auto");
+
+        var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.CreateCheckoutSessionAsync(
+                It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+                billingAddress, customerUpdate, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
+
+        var sut = CreatePaymentService(db, stripe);
+        var request = CreateCheckoutRequest() with
+        {
+            BillingAddress = billingAddress,
+            CustomerUpdate = customerUpdate
+        };
+
+        var result = await sut.CreateCheckoutSessionAsync(app, request);
+
+        Assert.StartsWith("PAY-BOUTIQUEGISE-", result.PaymentCode);
+        var payment = db.PaymentTransactions.Single();
+        Assert.Equal("CA", payment.BillingCountry);
+        Assert.Equal("QC", payment.BillingState);
+        stripe.Verify(s => s.CreateCheckoutSessionAsync(
+            It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+            billingAddress, customerUpdate, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateCheckoutSession_ClientExistant_MetAJourEmail()
     {
         await using var db = TestDbContextFactory.Create(nameof(CreateCheckoutSession_ClientExistant_MetAJourEmail));
@@ -123,7 +168,8 @@ public class PaymentServiceTests
         var stripe = new Mock<IStripeService>();
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);

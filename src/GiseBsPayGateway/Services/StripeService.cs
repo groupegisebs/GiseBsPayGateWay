@@ -1,4 +1,5 @@
 using GiseBsPayGateway.Data;
+using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -130,13 +131,21 @@ public class StripeService : IStripeService
         string cancelUrl,
         int? trialDays = null,
         bool embedded = false,
+        BillingAddressDto? billingAddress = null,
+        CustomerUpdateDto? customerUpdate = null,
         CancellationToken cancellationToken = default)
     {
         await ConfigureStripeAsync(cancellationToken);
 
         var stripeProductId = await EnsureStripeProductAsync(payment.Product, cancellationToken);
         var stripePriceId = await EnsureStripePriceAsync(plan, stripeProductId, cancellationToken);
-        var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken);
+        var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken)
+            ?? throw new InvalidOperationException("Impossible de créer ou récupérer le client Stripe.");
+
+        if (billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1))
+        {
+            await ApplyStripeCustomerAddressAsync(stripeCustomerId, billingAddress, cancellationToken);
+        }
 
         var sessionService = new SessionService();
         var options = new SessionCreateOptions
@@ -162,6 +171,14 @@ public class StripeService : IStripeService
                 ["plan_code"] = plan.PlanCode
             }
         };
+
+        if (!string.IsNullOrWhiteSpace(customerUpdate?.Address))
+        {
+            options.CustomerUpdate = new SessionCustomerUpdateOptions
+            {
+                Address = customerUpdate.Address
+            };
+        }
 
         if (embedded)
         {
@@ -199,6 +216,26 @@ public class StripeService : IStripeService
     {
         var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return $"{url}{separator}{query}";
+    }
+
+    private static async Task ApplyStripeCustomerAddressAsync(
+        string stripeCustomerId,
+        BillingAddressDto billingAddress,
+        CancellationToken cancellationToken)
+    {
+        var service = new CustomerService();
+        await service.UpdateAsync(stripeCustomerId, new CustomerUpdateOptions
+        {
+            Address = new AddressOptions
+            {
+                Line1 = billingAddress.Line1.Trim(),
+                Line2 = billingAddress.Line2?.Trim(),
+                City = billingAddress.City.Trim(),
+                State = billingAddress.State?.Trim(),
+                PostalCode = billingAddress.PostalCode.Trim(),
+                Country = billingAddress.Country.Trim().ToUpperInvariant()
+            }
+        }, cancellationToken: cancellationToken);
     }
 
     public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)

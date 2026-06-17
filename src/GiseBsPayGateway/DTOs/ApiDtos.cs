@@ -1,5 +1,15 @@
 namespace GiseBsPayGateway.DTOs;
 
+public record BillingAddressDto(
+    string Line1,
+    string? Line2,
+    string City,
+    string? State,
+    string PostalCode,
+    string Country);
+
+public record CustomerUpdateDto(string Address);
+
 public record CreateCheckoutSessionRequest(
     string CustomerCode,
     string Email,
@@ -11,7 +21,9 @@ public record CreateCheckoutSessionRequest(
     string CancelUrl,
     string? MetadataJson,
     int? TrialDays,
-    bool Embedded = false);
+    bool Embedded = false,
+    BillingAddressDto? BillingAddress = null,
+    CustomerUpdateDto? CustomerUpdate = null);
 
 public record CheckoutSessionResponse(
     string PaymentCode,

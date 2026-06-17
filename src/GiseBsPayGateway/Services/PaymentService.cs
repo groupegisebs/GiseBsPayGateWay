@@ -86,8 +86,23 @@ public class PaymentService : IPaymentService
         _db.PaymentTransactions.Add(payment);
         await _db.SaveChangesAsync(cancellationToken);
 
+        if (request.BillingAddress is { } billingAddress)
+        {
+            payment.BillingCountry = billingAddress.Country.Trim().ToUpperInvariant();
+            payment.BillingState = billingAddress.State?.Trim();
+        }
+
         var (sessionId, url, clientSecret) = await _stripeService.CreateCheckoutSessionAsync(
-            payment, customer, plan, request.SuccessUrl, request.CancelUrl, request.TrialDays, request.Embedded, cancellationToken);
+            payment,
+            customer,
+            plan,
+            request.SuccessUrl,
+            request.CancelUrl,
+            request.TrialDays,
+            request.Embedded,
+            request.BillingAddress,
+            request.CustomerUpdate,
+            cancellationToken);
 
         payment.StripeCheckoutSessionId = sessionId;
         payment.UpdatedAt = DateTime.UtcNow;

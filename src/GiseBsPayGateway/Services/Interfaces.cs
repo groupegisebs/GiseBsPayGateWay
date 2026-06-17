@@ -16,7 +16,7 @@ public interface IStripeService
 {
     Task<string> EnsureStripeProductAsync(Entities.Product product, CancellationToken cancellationToken = default);
     Task<string> EnsureStripePriceAsync(Entities.PricingPlan plan, string stripeProductId, CancellationToken cancellationToken = default);
-    Task<(string SessionId, string? Url, string? ClientSecret)> CreateCheckoutSessionAsync(Entities.PaymentTransaction payment, Entities.Customer customer, Entities.PricingPlan plan, string successUrl, string cancelUrl, int? trialDays = null, bool embedded = false, CancellationToken cancellationToken = default);
+    Task<(string SessionId, string? Url, string? ClientSecret)> CreateCheckoutSessionAsync(Entities.PaymentTransaction payment, Entities.Customer customer, Entities.PricingPlan plan, string successUrl, string cancelUrl, int? trialDays = null, bool embedded = false, DTOs.BillingAddressDto? billingAddress = null, DTOs.CustomerUpdateDto? customerUpdate = null, CancellationToken cancellationToken = default);
     Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default);
     Task<string?> GetOrCreateStripeCustomerAsync(Entities.Customer customer, CancellationToken cancellationToken = default);
 }
