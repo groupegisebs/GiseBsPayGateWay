@@ -7,17 +7,17 @@ public static class StripeCheckoutFinancials
 {
     public static void ApplySessionTaxToPayment(PaymentTransaction payment, Session session)
     {
-        if (session.TotalDetails?.AmountTax is > 0 taxCents)
+        if (session.TotalDetails?.AmountTax is long taxCents && taxCents > 0)
         {
             payment.TaxAmount = taxCents / 100m;
         }
 
-        if (session.AmountSubtotal is > 0 subtotalCents)
+        if (session.AmountSubtotal is long subtotalCents && subtotalCents > 0)
         {
             payment.AmountSubtotal = subtotalCents / 100m;
         }
 
-        if (session.AmountTotal is > 0 totalCents)
+        if (session.AmountTotal is long totalCents && totalCents > 0)
         {
             var gross = totalCents / 100m;
             if (gross != payment.Amount)

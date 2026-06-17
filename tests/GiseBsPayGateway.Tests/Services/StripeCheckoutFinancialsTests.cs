@@ -2,9 +2,11 @@ using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Services;
 using GiseBsPayGateway.Tests.Infrastructure;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Stripe;
 using Stripe.Checkout;
+using InvoiceServiceImpl = GiseBsPayGateway.Services.InvoiceService;
 
 namespace GiseBsPayGateway.Tests.Services;
 
@@ -101,14 +103,14 @@ public class InvoiceServiceFinancialsTests
         stripeDetails.Setup(s => s.GetBalanceTransactionDetailsAsync("pi_test_1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StripeBalanceTransactionDetails(2.90m, 97.10m, 100m, "txn_test_1"));
 
-        var sut = new InvoiceService(
+        var sut = new InvoiceServiceImpl(
             db,
             new GisebsInvoiceCodeGenerator(db),
             new InvoicePdfGenerator(),
             new InvoiceFileStorage(new Microsoft.Extensions.Options.OptionsWrapper<GiseBsPayGateway.Configuration.DeploymentSettings>(
                 new GiseBsPayGateway.Configuration.DeploymentSettings { AppRoot = Path.GetTempPath() })),
             stripeDetails.Object,
-            Mock.Of<ILogger<InvoiceService>>());
+            Mock.Of<ILogger<InvoiceServiceImpl>>());
 
         var invoice = await sut.EnsureInvoiceForPaymentAsync(payment, CancellationToken.None);
 
