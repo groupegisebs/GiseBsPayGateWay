@@ -19,8 +19,16 @@ public static class DbSeeder
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationDbContext>>();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
 
-        await db.Database.MigrateAsync();
+        if (environment.IsEnvironment("Testing"))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+        else
+        {
+            await db.Database.MigrateAsync();
+        }
 
         await EnsureAdminUserAsync(userManager, auditService, seedOptions.AdminEmail, seedOptions.AdminPassword, "Administrateur GISEBS");
         await EnsureAdminUserAsync(userManager, auditService, seedOptions.TestEmail, seedOptions.TestPassword, "Compte test GISEBS");

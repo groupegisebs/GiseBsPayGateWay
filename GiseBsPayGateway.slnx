@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/GiseBsPayGateway/GiseBsPayGateway.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GiseBsPayGateway.Tests/GiseBsPayGateway.Tests.csproj" />
+  </Folder>
 </Solution>

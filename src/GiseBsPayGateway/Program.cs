@@ -2,6 +2,7 @@ using System.Text;
 using AspNetCoreRateLimit;
 using GiseBsPayGateway.Configuration;
 using GiseBsPayGateway.Data;
+using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Middleware;
 using GiseBsPayGateway.Options;
@@ -35,13 +36,22 @@ builder.Services.Configure<StripeSecretsOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKeyOptions.SectionName));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? builder.Configuration[$"{DeploymentSettings.SectionName}:ConnectionString"]
-    ?? throw new InvalidOperationException(
-        "Connection string introuvable. Définissez UBUNTU1_CONNECTION_STRING ou ConnectionStrings:DefaultConnection.");
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    var testDbName = builder.Configuration["Testing:InMemoryDatabaseName"] ?? Guid.NewGuid().ToString();
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseInMemoryDatabase(testDbName));
+}
+else
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? builder.Configuration[$"{DeploymentSettings.SectionName}:ConnectionString"]
+        ?? throw new InvalidOperationException(
+            "Connection string introuvable. Définissez UBUNTU1_CONNECTION_STRING ou ConnectionStrings:DefaultConnection.");
 
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseNpgsql(connectionString));
+}
 
 builder.Services.AddIdentity<AdminUser, IdentityRole>(options =>
     {
@@ -165,7 +175,7 @@ else
                     ? StatusCodes.Status400BadRequest
                     : StatusCodes.Status500InternalServerError;
                 context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new DTOs.ApiErrorResponse(
+                await context.Response.WriteAsJsonAsync(new ApiErrorResponse(
                     ex?.Message ?? "Erreur interne Pay Gateway.",
                     null));
                 return;
@@ -192,3 +202,5 @@ app.MapControllers();
 app.MapRazorPages();
 
 app.Run();
+
+public partial class Program;
