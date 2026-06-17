@@ -12,16 +12,33 @@ public interface IInvoiceService
 {
     Task SaveFromCheckoutCompletedAsync(Session session, PaymentTransaction payment, CancellationToken cancellationToken = default);
     Task SaveFromStripeInvoiceAsync(Invoice stripeInvoice, InvoiceStatus status, CancellationToken cancellationToken = default);
+    Task<PaymentInvoice?> GetByPaymentCodeAsync(Guid clientApplicationId, string paymentCode, CancellationToken cancellationToken = default);
+    Task<PaymentInvoice?> EnsureInvoiceForPaymentAsync(PaymentTransaction payment, CancellationToken cancellationToken = default);
+    Task<(byte[] Content, string FileName)?> GetPdfAsync(PaymentInvoice invoice, CancellationToken cancellationToken = default);
 }
 
 public class InvoiceService : IInvoiceService
 {
     private readonly ApplicationDbContext _db;
+    private readonly IGisebsInvoiceCodeGenerator _invoiceCodeGenerator;
+    private readonly IInvoicePdfGenerator _pdfGenerator;
+    private readonly IInvoiceFileStorage _fileStorage;
+    private readonly IStripePaymentDetailsService _stripePaymentDetailsService;
     private readonly ILogger<InvoiceService> _logger;
 
-    public InvoiceService(ApplicationDbContext db, ILogger<InvoiceService> logger)
+    public InvoiceService(
+        ApplicationDbContext db,
+        IGisebsInvoiceCodeGenerator invoiceCodeGenerator,
+        IInvoicePdfGenerator pdfGenerator,
+        IInvoiceFileStorage fileStorage,
+        IStripePaymentDetailsService stripePaymentDetailsService,
+        ILogger<InvoiceService> logger)
     {
         _db = db;
+        _invoiceCodeGenerator = invoiceCodeGenerator;
+        _pdfGenerator = pdfGenerator;
+        _fileStorage = fileStorage;
+        _stripePaymentDetailsService = stripePaymentDetailsService;
         _logger = logger;
     }
 
@@ -46,18 +63,19 @@ public class InvoiceService : IInvoiceService
         }
 
         var receiptUrl = await TryGetReceiptUrlAsync(session.PaymentIntentId, cancellationToken);
-
-        var invoice = BuildInvoiceFromPayment(payment);
+        var invoice = await BuildInvoiceFromPaymentAsync(payment, cancellationToken);
         invoice.StripeCheckoutSessionId = session.Id;
         invoice.StripePaymentIntentId = session.PaymentIntentId;
         invoice.ReceiptUrl = receiptUrl;
         invoice.Status = InvoiceStatus.Paid;
         invoice.PaidAt = payment.PaidAt ?? DateTime.UtcNow;
         invoice.InvoiceDate = invoice.PaidAt.Value;
+        StripeCheckoutFinancials.CopyPaymentFinancialsToInvoice(invoice, payment);
 
         _db.PaymentInvoices.Add(invoice);
         payment.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+        await GenerateAndStorePdfAsync(invoice, payment, cancellationToken);
 
         _logger.LogInformation("Facture {InvoiceCode} créée pour paiement {PaymentCode}", invoice.InvoiceCode, payment.PaymentCode);
     }
@@ -70,6 +88,7 @@ public class InvoiceService : IInvoiceService
         }
 
         var existing = await _db.PaymentInvoices
+            .Include(x => x.PaymentTransaction)
             .FirstOrDefaultAsync(x => x.StripeInvoiceId == stripeInvoice.Id, cancellationToken);
 
         if (existing is not null)
@@ -77,6 +96,7 @@ public class InvoiceService : IInvoiceService
             UpdateFromStripeInvoice(existing, stripeInvoice, status);
             existing.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
+            await GenerateAndStorePdfAsync(existing, existing.PaymentTransaction, cancellationToken);
             return;
         }
 
@@ -87,7 +107,7 @@ public class InvoiceService : IInvoiceService
             return;
         }
 
-        var invoice = BuildInvoiceFromContext(context);
+        var invoice = await BuildInvoiceFromContextAsync(context, cancellationToken);
         UpdateFromStripeInvoice(invoice, stripeInvoice, status);
         invoice.PaymentTransactionId = context.Payment?.Id;
         invoice.SubscriptionId = context.Subscription?.Id;
@@ -100,8 +120,99 @@ public class InvoiceService : IInvoiceService
 
         _db.PaymentInvoices.Add(invoice);
         await _db.SaveChangesAsync(cancellationToken);
+        await GenerateAndStorePdfAsync(invoice, context.Payment, cancellationToken);
 
         _logger.LogInformation("Facture Stripe {StripeInvoiceId} enregistrée ({InvoiceCode})", stripeInvoice.Id, invoice.InvoiceCode);
+    }
+
+    public async Task<PaymentInvoice?> GetByPaymentCodeAsync(Guid clientApplicationId, string paymentCode, CancellationToken cancellationToken = default)
+    {
+        return await _db.PaymentInvoices.AsNoTracking()
+            .Include(x => x.PaymentTransaction)
+            .FirstOrDefaultAsync(
+                x => x.ClientApplicationId == clientApplicationId &&
+                     x.PaymentTransaction != null &&
+                     x.PaymentTransaction.PaymentCode == paymentCode,
+                cancellationToken);
+    }
+
+    public async Task<PaymentInvoice?> EnsureInvoiceForPaymentAsync(PaymentTransaction payment, CancellationToken cancellationToken = default)
+    {
+        if (payment.Status != PaymentStatus.Succeeded)
+        {
+            return null;
+        }
+
+        await EnsurePaymentGraphLoadedAsync(payment, cancellationToken);
+
+        var existing = await _db.PaymentInvoices
+            .Include(x => x.PaymentTransaction)
+            .FirstOrDefaultAsync(x => x.PaymentTransactionId == payment.Id, cancellationToken);
+
+        if (existing is not null)
+        {
+            await BackfillPaymentFinancialsAsync(payment, cancellationToken);
+            StripeCheckoutFinancials.CopyPaymentFinancialsToInvoice(existing, payment);
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+            await GenerateAndStorePdfAsync(existing, payment, cancellationToken);
+            return existing;
+        }
+
+        await BackfillPaymentFinancialsAsync(payment, cancellationToken);
+
+        var invoice = await BuildInvoiceFromPaymentAsync(payment, cancellationToken);
+        invoice.StripeCheckoutSessionId ??= payment.StripeCheckoutSessionId;
+        invoice.StripePaymentIntentId ??= payment.StripePaymentIntentId;
+        invoice.StripeInvoiceId ??= payment.StripeInvoiceId;
+        invoice.Status = InvoiceStatus.Paid;
+        invoice.PaidAt = payment.PaidAt ?? DateTime.UtcNow;
+        invoice.InvoiceDate = invoice.PaidAt.Value;
+        StripeCheckoutFinancials.CopyPaymentFinancialsToInvoice(invoice, payment);
+
+        _db.PaymentInvoices.Add(invoice);
+        payment.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+        await GenerateAndStorePdfAsync(invoice, payment, cancellationToken);
+
+        _logger.LogInformation("Facture {InvoiceCode} générée rétroactivement pour {PaymentCode}", invoice.InvoiceCode, payment.PaymentCode);
+        return invoice;
+    }
+
+    public Task<(byte[] Content, string FileName)?> GetPdfAsync(PaymentInvoice invoice, CancellationToken cancellationToken = default)
+    {
+        var fullPath = _fileStorage.ResolveFullPath(invoice.StoredPdfRelativePath);
+        if (fullPath is null)
+        {
+            return Task.FromResult<(byte[] Content, string FileName)?>(null);
+        }
+
+        var content = System.IO.File.ReadAllBytes(fullPath);
+        return Task.FromResult<(byte[] Content, string FileName)?>((content, $"{invoice.InvoiceCode}.pdf"));
+    }
+
+    private async Task EnsurePaymentGraphLoadedAsync(PaymentTransaction payment, CancellationToken cancellationToken)
+    {
+        await _db.Entry(payment).Reference(x => x.Customer).LoadAsync(cancellationToken);
+        await _db.Entry(payment).Reference(x => x.Product).LoadAsync(cancellationToken);
+        await _db.Entry(payment).Reference(x => x.PricingPlan).LoadAsync(cancellationToken);
+    }
+
+    private async Task GenerateAndStorePdfAsync(
+        PaymentInvoice invoice,
+        PaymentTransaction? payment,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(invoice.StoredPdfRelativePath) &&
+            _fileStorage.ResolveFullPath(invoice.StoredPdfRelativePath) is not null)
+        {
+            return;
+        }
+
+        var pdfBytes = _pdfGenerator.Generate(invoice, payment ?? invoice.PaymentTransaction);
+        invoice.StoredPdfRelativePath = await _fileStorage.SavePdfAsync(invoice.InvoiceCode, pdfBytes, cancellationToken);
+        invoice.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<InvoiceContext?> ResolveInvoiceContextAsync(Invoice stripeInvoice, CancellationToken cancellationToken)
@@ -148,11 +259,11 @@ public class InvoiceService : IInvoiceService
         return null;
     }
 
-    private static PaymentInvoice BuildInvoiceFromPayment(PaymentTransaction payment)
+    private async Task<PaymentInvoice> BuildInvoiceFromPaymentAsync(PaymentTransaction payment, CancellationToken cancellationToken)
     {
         return new PaymentInvoice
         {
-            InvoiceCode = $"INV-{payment.PaymentCode}",
+            InvoiceCode = await _invoiceCodeGenerator.GenerateUniqueAsync(cancellationToken),
             ClientApplicationId = payment.ClientApplicationId,
             CustomerId = payment.CustomerId,
             ProductId = payment.ProductId,
@@ -166,19 +277,34 @@ public class InvoiceService : IInvoiceService
             ProductName = payment.Product.Name,
             PlanCode = payment.PricingPlan.PlanCode,
             PlanName = payment.PricingPlan.Name,
-            Amount = payment.Amount,
+            Amount = StripeCheckoutFinancials.ResolveCustomerTotal(payment),
             Currency = payment.Currency,
+            AmountSubtotal = payment.AmountSubtotal ?? payment.Amount,
             LineItemsDescription = $"{payment.Product.Name} — {payment.PricingPlan.Name}"
         };
     }
 
-    private static PaymentInvoice BuildInvoiceFromContext(InvoiceContext context)
+    private async Task BackfillPaymentFinancialsAsync(PaymentTransaction payment, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(payment.StripePaymentIntentId) && !payment.StripeFee.HasValue)
+        {
+            var details = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
+                payment.StripePaymentIntentId,
+                cancellationToken);
+            StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, details);
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private async Task<PaymentInvoice> BuildInvoiceFromContextAsync(InvoiceContext context, CancellationToken cancellationToken)
     {
         var amount = context.Payment?.Amount ?? context.Plan.Amount;
         var currency = context.Payment?.Currency ?? context.Plan.Currency;
 
         return new PaymentInvoice
         {
+            InvoiceCode = await _invoiceCodeGenerator.GenerateUniqueAsync(cancellationToken),
             ClientApplicationId = context.App.Id,
             CustomerId = context.Customer.Id,
             ProductId = context.Product.Id,
@@ -228,10 +354,6 @@ public class InvoiceService : IInvoiceService
         {
             invoice.Currency = stripeInvoice.Currency.ToLowerInvariant();
         }
-
-        invoice.InvoiceCode = !string.IsNullOrWhiteSpace(stripeInvoice.Number)
-            ? stripeInvoice.Number
-            : $"INV-{stripeInvoice.Id[^12..]}";
 
         if (status == InvoiceStatus.Paid)
         {

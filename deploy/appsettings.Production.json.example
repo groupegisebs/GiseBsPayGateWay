@@ -8,7 +8,8 @@
     "AppName": "GISEBS Pay Gateway",
     "ServiceName": "gisebs-pay-gateway",
     "AppRoot": "/opt/apps/gisebs-pay-gateway",
-    "ListenPort": 7843
+    "ListenPort": 7843,
+    "PublicBaseUrl": "https://gisebsapipaygateway.gisebs.com"
   },
   "Jwt": {
     "SecretKey": "GENERER-UNE-CLE-ALEATOIRE-DE-64-CARACTERES-MINIMUM"

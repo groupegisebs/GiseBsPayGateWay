@@ -12,11 +12,16 @@
         <tr>
             <th>Date</th>
             <th>Code paiement</th>
+            <th>Facture GISEBS</th>
             <th>Application</th>
             <th>Client</th>
             <th>Produit</th>
             <th>Montant</th>
+            <th>Taxes</th>
+            <th>Frais Stripe</th>
+            <th>Net</th>
             <th>Statut</th>
+            <th>Stripe PI</th>
             <th>Payé le</th>
         </tr>
     </thead>
@@ -26,11 +31,16 @@
         <tr>
             <td>@item.CreatedAt.ToString("g")</td>
             <td><code>@item.PaymentCode</code></td>
+            <td>@(string.IsNullOrWhiteSpace(item.InvoiceNumber) ? "—" : Html.Raw($"<code>{item.InvoiceNumber}</code>"))</td>
             <td>@item.AppName</td>
             <td>@item.CustomerCode</td>
             <td>@item.ProductCode</td>
             <td>@item.Amount @item.Currency.ToUpper()</td>
+            <td>@(item.TaxAmount?.ToString("N2") ?? "—")</td>
+            <td>@(item.StripeFee?.ToString("N2") ?? "—")</td>
+            <td>@(item.NetAmount?.ToString("N2") ?? "—")</td>
             <td><span class="badge bg-secondary">@item.Status</span></td>
+            <td><small>@(item.StripePaymentIntentId ?? "—")</small></td>
             <td>@(item.PaidAt?.ToString("g") ?? "-")</td>
         </tr>
     }

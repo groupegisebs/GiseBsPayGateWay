@@ -13,6 +13,7 @@ public class WebhookService : IWebhookService
     private readonly ApplicationDbContext _db;
     private readonly IAuditService _auditService;
     private readonly IInvoiceService _invoiceService;
+    private readonly IStripePaymentDetailsService _stripePaymentDetailsService;
     private readonly IStripeSettingsProvider _stripeSettings;
     private readonly ILogger<WebhookService> _logger;
 
@@ -20,12 +21,14 @@ public class WebhookService : IWebhookService
         ApplicationDbContext db,
         IAuditService auditService,
         IInvoiceService invoiceService,
+        IStripePaymentDetailsService stripePaymentDetailsService,
         IStripeSettingsProvider stripeSettings,
         ILogger<WebhookService> logger)
     {
         _db = db;
         _auditService = auditService;
         _invoiceService = invoiceService;
+        _stripePaymentDetailsService = stripePaymentDetailsService;
         _stripeSettings = stripeSettings;
         _logger = logger;
     }
@@ -150,6 +153,12 @@ public class WebhookService : IWebhookService
         payment.Status = PaymentStatus.Succeeded;
         payment.PaidAt = DateTime.UtcNow;
         payment.UpdatedAt = DateTime.UtcNow;
+
+        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+        var balanceDetails = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
+            session.PaymentIntentId,
+            cancellationToken);
+        StripeCheckoutFinancials.ApplyBalanceTransactionToPayment(payment, balanceDetails);
 
         if (payment.PricingPlan.BillingInterval != BillingInterval.OneTime && !string.IsNullOrWhiteSpace(session.SubscriptionId))
         {

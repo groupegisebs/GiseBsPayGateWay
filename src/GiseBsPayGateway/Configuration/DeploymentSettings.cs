@@ -9,4 +9,5 @@ public class DeploymentSettings
     public string AppRoot { get; set; } = "/opt/apps/gisebs-pay-gateway";
     public int ListenPort { get; set; } = 7843;
     public string? ConnectionString { get; set; }
+    public string? PublicBaseUrl { get; set; }
 }

@@ -31,7 +31,40 @@ public record PaymentResponse(
     string PlanCode,
     DateTime CreatedAt,
     DateTime? PaidAt,
-    string? FailureReason);
+    string? FailureReason,
+    string? StripeCheckoutSessionId,
+    string? StripePaymentIntentId,
+    string? InvoiceNumber,
+    string? InvoiceDownloadUrl,
+    decimal? AmountSubtotal = null,
+    decimal? TaxAmount = null,
+    decimal? GrossAmount = null,
+    decimal? StripeFee = null,
+    decimal? NetAmount = null,
+    string? StripeBalanceTransactionId = null,
+    string? BillingCountry = null,
+    string? BillingState = null);
+
+public record InvoiceResponse(
+    string InvoiceNumber,
+    string Status,
+    decimal Amount,
+    string Currency,
+    DateTime InvoiceDate,
+    DateTime? PaidAt,
+    string? PaymentCode,
+    string? StripePaymentIntentId,
+    string? StripeCheckoutSessionId,
+    string? StripeInvoiceId,
+    string DownloadUrl,
+    decimal? AmountSubtotal = null,
+    decimal? TaxAmount = null,
+    decimal? GrossAmount = null,
+    decimal? StripeFee = null,
+    decimal? NetAmount = null,
+    string? StripeBalanceTransactionId = null,
+    string? BillingCountry = null,
+    string? BillingState = null);
 
 public record SubscriptionResponse(
     string SubscriptionCode,

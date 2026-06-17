@@ -92,6 +92,12 @@
         <div class="card mb-4">
             <div class="card-header">Documents</div>
             <div class="card-body d-grid gap-2">
+                @if (Model.HasStoredPdf)
+                {
+                    <a asp-page-handler="Download" asp-route-id="@Model.Invoice.Id" class="btn btn-primary">
+                        Télécharger facture GISEBS (PDF)
+                    </a>
+                }
                 @if (!string.IsNullOrWhiteSpace(Model.Invoice.InvoicePdfUrl))
                 {
                     <a href="@Model.Invoice.InvoicePdfUrl" target="_blank" rel="noopener" class="btn btn-primary">
@@ -110,11 +116,12 @@
                         Reçu de paiement
                     </a>
                 }
-                @if (string.IsNullOrWhiteSpace(Model.Invoice.InvoicePdfUrl) &&
+                @if (!Model.HasStoredPdf &&
+                     string.IsNullOrWhiteSpace(Model.Invoice.InvoicePdfUrl) &&
                      string.IsNullOrWhiteSpace(Model.Invoice.HostedInvoiceUrl) &&
                      string.IsNullOrWhiteSpace(Model.Invoice.ReceiptUrl))
                 {
-                    <p class="text-muted mb-0">Aucun document Stripe disponible pour cette facture.</p>
+                    <p class="text-muted mb-0">Aucun document disponible pour cette facture.</p>
                 }
             </div>
         </div>

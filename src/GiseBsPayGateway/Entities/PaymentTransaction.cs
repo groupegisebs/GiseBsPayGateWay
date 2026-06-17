@@ -24,8 +24,17 @@ public class PaymentTransaction : BaseEntity
     public string? StripeCheckoutSessionId { get; set; }
     public string? StripePaymentIntentId { get; set; }
     public string? StripeInvoiceId { get; set; }
+    public string? StripeBalanceTransactionId { get; set; }
     public string? FailureReason { get; set; }
     public DateTime? PaidAt { get; set; }
+
+    public decimal? AmountSubtotal { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public decimal? GrossAmount { get; set; }
+    public decimal? StripeFee { get; set; }
+    public decimal? NetAmount { get; set; }
+    public string? BillingCountry { get; set; }
+    public string? BillingState { get; set; }
 
     public Guid? SubscriptionId { get; set; }
     public Subscription? Subscription { get; set; }

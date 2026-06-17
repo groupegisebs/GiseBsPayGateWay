@@ -35,6 +35,14 @@ public class PaymentInvoice : BaseEntity
 
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "eur";
+    public decimal? AmountSubtotal { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public decimal? GrossAmount { get; set; }
+    public decimal? StripeFee { get; set; }
+    public decimal? NetAmount { get; set; }
+    public string? StripeBalanceTransactionId { get; set; }
+    public string? BillingCountry { get; set; }
+    public string? BillingState { get; set; }
     public InvoiceStatus Status { get; set; } = InvoiceStatus.Open;
 
     public string? BillingReason { get; set; }
@@ -50,5 +58,6 @@ public class PaymentInvoice : BaseEntity
     public string? HostedInvoiceUrl { get; set; }
     public string? InvoicePdfUrl { get; set; }
     public string? ReceiptUrl { get; set; }
+    public string? StoredPdfRelativePath { get; set; }
     public string? LineItemsDescription { get; set; }
 }

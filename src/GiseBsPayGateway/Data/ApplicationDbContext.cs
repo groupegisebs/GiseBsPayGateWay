@@ -73,6 +73,14 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.PaymentCode).HasMaxLength(50);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.AmountSubtotal).HasPrecision(18, 2);
+            e.Property(x => x.TaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.GrossAmount).HasPrecision(18, 2);
+            e.Property(x => x.StripeFee).HasPrecision(18, 2);
+            e.Property(x => x.NetAmount).HasPrecision(18, 2);
+            e.Property(x => x.StripeBalanceTransactionId).HasMaxLength(100);
+            e.Property(x => x.BillingCountry).HasMaxLength(2);
+            e.Property(x => x.BillingState).HasMaxLength(50);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.ClientApplicationId);
             e.HasOne(x => x.Customer).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
@@ -87,6 +95,14 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.InvoiceCode).HasMaxLength(50);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.AmountSubtotal).HasPrecision(18, 2);
+            e.Property(x => x.TaxAmount).HasPrecision(18, 2);
+            e.Property(x => x.GrossAmount).HasPrecision(18, 2);
+            e.Property(x => x.StripeFee).HasPrecision(18, 2);
+            e.Property(x => x.NetAmount).HasPrecision(18, 2);
+            e.Property(x => x.StripeBalanceTransactionId).HasMaxLength(100);
+            e.Property(x => x.BillingCountry).HasMaxLength(2);
+            e.Property(x => x.BillingState).HasMaxLength(50);
             e.Property(x => x.CustomerCode).HasMaxLength(50);
             e.Property(x => x.CustomerEmail).HasMaxLength(256);
             e.Property(x => x.CustomerName).HasMaxLength(200);
@@ -102,6 +118,7 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.HostedInvoiceUrl).HasMaxLength(1000);
             e.Property(x => x.InvoicePdfUrl).HasMaxLength(1000);
             e.Property(x => x.ReceiptUrl).HasMaxLength(1000);
+            e.Property(x => x.StoredPdfRelativePath).HasMaxLength(500);
             e.Property(x => x.LineItemsDescription).HasMaxLength(2000);
             e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);

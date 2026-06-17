@@ -1,6 +1,8 @@
 using GiseBsPayGateway.Data;
+using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
+using GiseBsPayGateway.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace GiseBsPayGateway.Services;
@@ -11,20 +13,26 @@ public class PaymentService : IPaymentService
     private readonly IStripeService _stripeService;
     private readonly IStripeSettingsProvider _stripeSettings;
     private readonly IAuditService _auditService;
+    private readonly IInvoiceService _invoiceService;
+    private readonly IInvoiceLinkBuilder _invoiceLinkBuilder;
 
     public PaymentService(
         ApplicationDbContext db,
         IStripeService stripeService,
         IStripeSettingsProvider stripeSettings,
-        IAuditService auditService)
+        IAuditService auditService,
+        IInvoiceService invoiceService,
+        IInvoiceLinkBuilder invoiceLinkBuilder)
     {
         _db = db;
         _stripeService = stripeService;
         _stripeSettings = stripeSettings;
         _auditService = auditService;
+        _invoiceService = invoiceService;
+        _invoiceLinkBuilder = invoiceLinkBuilder;
     }
 
-    public async Task<DTOs.CheckoutSessionResponse> CreateCheckoutSessionAsync(ClientApplication app, DTOs.CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default)
+    public async Task<CheckoutSessionResponse> CreateCheckoutSessionAsync(ClientApplication app, CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default)
     {
         var product = await _db.Products
             .Include(x => x.PricingPlans)
@@ -89,7 +97,7 @@ public class PaymentService : IPaymentService
             $"PaymentCode={paymentCode};Embedded={request.Embedded}", app.AppCode);
 
         var stripeSettings = await _stripeSettings.GetActiveAsync(cancellationToken);
-        return new DTOs.CheckoutSessionResponse(
+        return new CheckoutSessionResponse(
             paymentCode,
             url ?? string.Empty,
             sessionId,
@@ -98,18 +106,27 @@ public class PaymentService : IPaymentService
             request.Embedded ? stripeSettings?.PublishableKey : null);
     }
 
-    public async Task<DTOs.PaymentResponse?> GetPaymentByCodeAsync(ClientApplication app, string paymentCode, CancellationToken cancellationToken = default)
+    public async Task<PaymentResponse?> GetPaymentByCodeAsync(ClientApplication app, string paymentCode, CancellationToken cancellationToken = default)
     {
-        var payment = await _db.PaymentTransactions.AsNoTracking()
+        var payment = await _db.PaymentTransactions
             .Include(x => x.Customer)
             .Include(x => x.Product)
             .Include(x => x.PricingPlan)
             .FirstOrDefaultAsync(x => x.ClientApplicationId == app.Id && x.PaymentCode == paymentCode, cancellationToken);
 
-        return payment is null ? null : MapPayment(payment);
+        if (payment is null)
+        {
+            return null;
+        }
+
+        var invoice = payment.Status == PaymentStatus.Succeeded
+            ? await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken)
+            : await _invoiceService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
+
+        return MapPayment(payment, invoice);
     }
 
-    public async Task<IReadOnlyList<DTOs.SubscriptionResponse>> GetCustomerSubscriptionsAsync(ClientApplication app, string customerCode, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SubscriptionResponse>> GetCustomerSubscriptionsAsync(ClientApplication app, string customerCode, CancellationToken cancellationToken = default)
     {
         var subscriptions = await _db.Subscriptions.AsNoTracking()
             .Include(x => x.Customer)
@@ -122,7 +139,7 @@ public class PaymentService : IPaymentService
         return subscriptions.Select(MapSubscription).ToList();
     }
 
-    public async Task<DTOs.CancelSubscriptionResponse> CancelSubscriptionAsync(ClientApplication app, DTOs.CancelSubscriptionRequest request, CancellationToken cancellationToken = default)
+    public async Task<CancelSubscriptionResponse> CancelSubscriptionAsync(ClientApplication app, CancelSubscriptionRequest request, CancellationToken cancellationToken = default)
     {
         var subscription = await _db.Subscriptions
             .FirstOrDefaultAsync(x => x.ClientApplicationId == app.Id && x.SubscriptionCode == request.SubscriptionCode, cancellationToken)
@@ -148,13 +165,13 @@ public class PaymentService : IPaymentService
         await _auditService.LogAsync("SubscriptionCancelled", nameof(Subscription), subscription.Id.ToString(), true,
             $"Code={subscription.SubscriptionCode}", app.AppCode);
 
-        return new DTOs.CancelSubscriptionResponse(
+        return new CancelSubscriptionResponse(
             subscription.SubscriptionCode,
             subscription.Status.ToString(),
             subscription.CancelledAt);
     }
 
-    private static DTOs.PaymentResponse MapPayment(PaymentTransaction payment) =>
+    private PaymentResponse MapPayment(PaymentTransaction payment, PaymentInvoice? invoice) =>
         new(
             payment.PaymentCode,
             payment.Status.ToString(),
@@ -165,9 +182,21 @@ public class PaymentService : IPaymentService
             payment.PricingPlan.PlanCode,
             payment.CreatedAt,
             payment.PaidAt,
-            payment.FailureReason);
+            payment.FailureReason,
+            payment.StripeCheckoutSessionId,
+            payment.StripePaymentIntentId,
+            invoice?.InvoiceCode,
+            invoice is null ? null : _invoiceLinkBuilder.BuildDownloadUrl(invoice.InvoiceCode),
+            payment.AmountSubtotal,
+            payment.TaxAmount,
+            payment.GrossAmount,
+            payment.StripeFee,
+            payment.NetAmount,
+            payment.StripeBalanceTransactionId,
+            payment.BillingCountry,
+            payment.BillingState);
 
-    private static DTOs.SubscriptionResponse MapSubscription(Subscription subscription) =>
+    private static SubscriptionResponse MapSubscription(Subscription subscription) =>
         new(
             subscription.SubscriptionCode,
             subscription.Status.ToString(),

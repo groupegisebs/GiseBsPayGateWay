@@ -90,7 +90,13 @@ public class PaymentServiceTests
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StripeSettingsSnapshot("pk_test_xxx", "sk_test", "whsec", false, false));
 
-        var sut = new PaymentService(db, stripe.Object, settings.Object, Mock.Of<IAuditService>());
+        var sut = new PaymentService(
+            db,
+            stripe.Object,
+            settings.Object,
+            Mock.Of<IAuditService>(),
+            Mock.Of<IInvoiceService>(),
+            Mock.Of<IInvoiceLinkBuilder>());
 
         var result = await sut.CreateCheckoutSessionAsync(app, CreateCheckoutRequest(embedded: true));
 
@@ -143,13 +149,81 @@ public class PaymentServiceTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task GetPaymentByCodeAsync_PaiementReussi_ExposeFraisEtTaxes()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(GetPaymentByCodeAsync_PaiementReussi_ExposeFraisEtTaxes));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var (product, plan) = await TestDbContextFactory.SeedProductPlanAsync(db, app);
+
+        var customer = new Customer
+        {
+            ClientApplicationId = app.Id,
+            CustomerCode = "CUST-1",
+            Email = "test@example.com"
+        };
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+
+        var payment = new PaymentTransaction
+        {
+            ClientApplicationId = app.Id,
+            CustomerId = customer.Id,
+            ProductId = product.Id,
+            PricingPlanId = plan.Id,
+            PaymentCode = "PAY-FEES-1",
+            Status = PaymentStatus.Succeeded,
+            Amount = 100m,
+            Currency = "cad",
+            AmountSubtotal = 100m,
+            TaxAmount = 15m,
+            GrossAmount = 115m,
+            StripeFee = 3.35m,
+            NetAmount = 111.65m,
+            StripeBalanceTransactionId = "txn_abc",
+            BillingCountry = "CA",
+            BillingState = "ON",
+            PaidAt = DateTime.UtcNow
+        };
+        db.PaymentTransactions.Add(payment);
+        await db.SaveChangesAsync();
+
+        var sut = CreatePaymentService(db, new Mock<IStripeService>());
+        var result = await sut.GetPaymentByCodeAsync(app, "PAY-FEES-1");
+
+        Assert.NotNull(result);
+        Assert.Equal(15m, result!.TaxAmount);
+        Assert.Equal(115m, result.GrossAmount);
+        Assert.Equal(3.35m, result.StripeFee);
+        Assert.Equal(111.65m, result.NetAmount);
+        Assert.Equal("txn_abc", result.StripeBalanceTransactionId);
+        Assert.Equal("CA", result.BillingCountry);
+        Assert.Equal("ON", result.BillingState);
+    }
+
     private static PaymentService CreatePaymentService(ApplicationDbContext db, Mock<IStripeService> stripe)
     {
         var settings = new Mock<IStripeSettingsProvider>();
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StripeSettingsSnapshot("pk_test", "sk_test", "whsec", false, false));
 
-        return new PaymentService(db, stripe.Object, settings.Object, Mock.Of<IAuditService>());
+        var invoiceService = new Mock<IInvoiceService>();
+        invoiceService.Setup(s => s.GetByPaymentCodeAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PaymentInvoice?)null);
+        invoiceService.Setup(s => s.EnsureInvoiceForPaymentAsync(It.IsAny<PaymentTransaction>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PaymentInvoice?)null);
+
+        var invoiceLinks = new Mock<IInvoiceLinkBuilder>();
+        invoiceLinks.Setup(l => l.BuildDownloadUrl(It.IsAny<string>()))
+            .Returns((string code) => $"/api/invoices/{code}/download");
+
+        return new PaymentService(
+            db,
+            stripe.Object,
+            settings.Object,
+            Mock.Of<IAuditService>(),
+            invoiceService.Object,
+            invoiceLinks.Object);
     }
 
     private static CreateCheckoutSessionRequest CreateCheckoutRequest(
