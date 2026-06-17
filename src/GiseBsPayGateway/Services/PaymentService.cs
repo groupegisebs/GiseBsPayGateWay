@@ -15,6 +15,7 @@ public class PaymentService : IPaymentService
     private readonly IAuditService _auditService;
     private readonly IInvoiceService _invoiceService;
     private readonly IInvoiceLinkBuilder _invoiceLinkBuilder;
+    private readonly ICollectedTaxService _collectedTaxService;
 
     public PaymentService(
         ApplicationDbContext db,
@@ -22,7 +23,8 @@ public class PaymentService : IPaymentService
         IStripeSettingsProvider stripeSettings,
         IAuditService auditService,
         IInvoiceService invoiceService,
-        IInvoiceLinkBuilder invoiceLinkBuilder)
+        IInvoiceLinkBuilder invoiceLinkBuilder,
+        ICollectedTaxService collectedTaxService)
     {
         _db = db;
         _stripeService = stripeService;
@@ -30,6 +32,7 @@ public class PaymentService : IPaymentService
         _auditService = auditService;
         _invoiceService = invoiceService;
         _invoiceLinkBuilder = invoiceLinkBuilder;
+        _collectedTaxService = collectedTaxService;
     }
 
     public async Task<CheckoutSessionResponse> CreateCheckoutSessionAsync(ClientApplication app, CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default)
@@ -138,7 +141,11 @@ public class PaymentService : IPaymentService
             ? await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken)
             : await _invoiceService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
 
-        return MapPayment(payment, invoice);
+        var collectedTax = payment.Status == PaymentStatus.Succeeded
+            ? await _collectedTaxService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken)
+            : null;
+
+        return MapPayment(payment, invoice, collectedTax);
     }
 
     public async Task<IReadOnlyList<SubscriptionResponse>> GetCustomerSubscriptionsAsync(ClientApplication app, string customerCode, CancellationToken cancellationToken = default)
@@ -186,7 +193,10 @@ public class PaymentService : IPaymentService
             subscription.CancelledAt);
     }
 
-    private PaymentResponse MapPayment(PaymentTransaction payment, PaymentInvoice? invoice) =>
+    private PaymentResponse MapPayment(
+        PaymentTransaction payment,
+        PaymentInvoice? invoice,
+        CollectedTaxRecord? collectedTax) =>
         new(
             payment.PaymentCode,
             payment.Status.ToString(),
@@ -208,8 +218,10 @@ public class PaymentService : IPaymentService
             payment.StripeFee,
             payment.NetAmount,
             payment.StripeBalanceTransactionId,
-            payment.BillingCountry,
-            payment.BillingState);
+            collectedTax?.BillingCountry ?? payment.BillingCountry,
+            collectedTax?.BillingState ?? payment.BillingState,
+            collectedTax is not null ? CollectedTaxMapper.ToBillingAddressDto(collectedTax) : null,
+            collectedTax is not null ? CollectedTaxMapper.ToLineDtos(collectedTax.Lines) : null);
 
     private static SubscriptionResponse MapSubscription(Subscription subscription) =>
         new(

@@ -28,7 +28,7 @@ public class TaxControllerTests
         taxService.Setup(s => s.CalculateAsync(It.IsAny<TaxCalculationRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
 
-        var controller = new TaxController(taxService.Object);
+        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>());
         ControllerTestHelper.SetClientApplicationContext(controller, app, apiKey);
 
         var request = new TaxCalculationRequest(
@@ -54,7 +54,7 @@ public class TaxControllerTests
         taxService.Setup(s => s.CalculateAsync(It.IsAny<TaxCalculationRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TaxCalculationException("Adresse de facturation incomplète."));
 
-        var controller = new TaxController(taxService.Object);
+        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>());
         ControllerTestHelper.SetClientApplicationContext(controller, app, apiKey);
 
         var request = new TaxCalculationRequest(

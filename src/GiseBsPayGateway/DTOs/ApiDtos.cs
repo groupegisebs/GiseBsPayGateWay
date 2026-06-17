@@ -55,7 +55,9 @@ public record PaymentResponse(
     decimal? NetAmount = null,
     string? StripeBalanceTransactionId = null,
     string? BillingCountry = null,
-    string? BillingState = null);
+    string? BillingState = null,
+    BillingAddressDto? BillingAddress = null,
+    IReadOnlyList<CollectedTaxLineDto>? TaxBreakdown = null);
 
 public record InvoiceResponse(
     string InvoiceNumber,
@@ -150,6 +152,24 @@ public record TaxCalculationRequest(
     long? AmountMinorUnits = null);
 
 public record TaxComponentDto(string Code, string Name, decimal Rate, string Type);
+
+public record CollectedTaxLineDto(string Code, string Name, decimal Rate, decimal Amount, string Type);
+
+public record CollectedTaxSummaryDto(
+    string PaymentCode,
+    string TransactionReference,
+    DateTime CollectedAt,
+    string? BillingCountry,
+    string? BillingState,
+    string? BillingCity,
+    string? BillingPostalCode,
+    decimal AmountSubtotal,
+    decimal TaxAmountTotal,
+    decimal GrossAmount,
+    string Currency,
+    string? StripeTaxTransactionId,
+    IReadOnlyList<CollectedTaxLineDto> TaxBreakdown,
+    BillingAddressDto? BillingAddress);
 
 public record TaxCalculationResponse(
     string JurisdictionCode,

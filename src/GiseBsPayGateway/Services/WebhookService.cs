@@ -14,6 +14,7 @@ public class WebhookService : IWebhookService
     private readonly IAuditService _auditService;
     private readonly IInvoiceService _invoiceService;
     private readonly IStripePaymentDetailsService _stripePaymentDetailsService;
+    private readonly ICollectedTaxService _collectedTaxService;
     private readonly IStripeSettingsProvider _stripeSettings;
     private readonly ILogger<WebhookService> _logger;
 
@@ -22,6 +23,7 @@ public class WebhookService : IWebhookService
         IAuditService auditService,
         IInvoiceService invoiceService,
         IStripePaymentDetailsService stripePaymentDetailsService,
+        ICollectedTaxService collectedTaxService,
         IStripeSettingsProvider stripeSettings,
         ILogger<WebhookService> logger)
     {
@@ -29,6 +31,7 @@ public class WebhookService : IWebhookService
         _auditService = auditService;
         _invoiceService = invoiceService;
         _stripePaymentDetailsService = stripePaymentDetailsService;
+        _collectedTaxService = collectedTaxService;
         _stripeSettings = stripeSettings;
         _logger = logger;
     }
@@ -191,6 +194,7 @@ public class WebhookService : IWebhookService
 
         await _db.SaveChangesAsync(cancellationToken);
         await _invoiceService.SaveFromCheckoutCompletedAsync(resolvedSession, payment, cancellationToken);
+        await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, resolvedSession, cancellationToken);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -200,6 +204,7 @@ public class WebhookService : IWebhookService
         if (subscriptionId is null)
         {
             await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
+            await TrySaveCollectedTaxFromInvoiceAsync(invoice!, null, cancellationToken);
             return;
         }
 
@@ -209,6 +214,7 @@ public class WebhookService : IWebhookService
         if (subscription is null)
         {
             await _invoiceService.SaveFromStripeInvoiceAsync(invoice!, InvoiceStatus.Paid, cancellationToken);
+            await TrySaveCollectedTaxFromInvoiceAsync(invoice!, null, cancellationToken);
             return;
         }
 
@@ -218,6 +224,10 @@ public class WebhookService : IWebhookService
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         await _invoiceService.SaveFromStripeInvoiceAsync(invoice, InvoiceStatus.Paid, cancellationToken);
+
+        var payment = await _db.PaymentTransactions
+            .FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken);
+        await TrySaveCollectedTaxFromInvoiceAsync(invoice, payment, cancellationToken);
     }
 
     private async Task HandleInvoiceFailedAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -287,6 +297,21 @@ public class WebhookService : IWebhookService
 
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task TrySaveCollectedTaxFromInvoiceAsync(
+        Invoice invoice,
+        Entities.PaymentTransaction? payment,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _collectedTaxService.SaveFromStripeInvoiceAsync(invoice, payment, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible d'enregistrer les taxes collectées pour la facture {InvoiceId}", invoice.Id);
+        }
     }
 
     private static string? GetInvoiceSubscriptionId(Invoice? invoice) =>

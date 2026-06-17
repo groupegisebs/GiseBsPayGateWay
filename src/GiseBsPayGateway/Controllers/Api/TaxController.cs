@@ -1,4 +1,5 @@
 using GiseBsPayGateway.DTOs;
+using GiseBsPayGateway.Extensions;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,10 +10,12 @@ namespace GiseBsPayGateway.Controllers.Api;
 public class TaxController : ControllerBase
 {
     private readonly ITaxService _taxService;
+    private readonly ICollectedTaxService _collectedTaxService;
 
-    public TaxController(ITaxService taxService)
+    public TaxController(ITaxService taxService, ICollectedTaxService collectedTaxService)
     {
         _taxService = taxService;
+        _collectedTaxService = collectedTaxService;
     }
 
     [HttpPost("calculate")]
@@ -33,5 +36,16 @@ public class TaxController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ApiErrorResponse(ex.Message, null));
         }
+    }
+
+    [HttpGet("collected")]
+    public async Task<ActionResult<IReadOnlyList<CollectedTaxSummaryDto>>> ListCollected(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        CancellationToken cancellationToken)
+    {
+        var app = HttpContext.GetClientApplicationContext().Application;
+        var records = await _collectedTaxService.ListCollectedAsync(app.Id, from, to, cancellationToken);
+        return Ok(records);
     }
 }

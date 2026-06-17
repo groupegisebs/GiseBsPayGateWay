@@ -18,6 +18,8 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<PaymentInvoice> PaymentInvoices => Set<PaymentInvoice>();
+    public DbSet<CollectedTaxRecord> CollectedTaxRecords => Set<CollectedTaxRecord>();
+    public DbSet<CollectedTaxLine> CollectedTaxLines => Set<CollectedTaxLine>();
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
@@ -86,6 +88,40 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasOne(x => x.PricingPlan).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.PricingPlanId);
             e.HasOne(x => x.Subscription).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.SubscriptionId);
+        });
+
+        builder.Entity<CollectedTaxRecord>(e =>
+        {
+            e.HasIndex(x => x.PaymentCode);
+            e.HasIndex(x => x.TransactionReference);
+            e.HasIndex(x => new { x.ClientApplicationId, x.CollectedAt });
+            e.HasIndex(x => x.PaymentTransactionId).IsUnique().HasFilter("\"PaymentTransactionId\" IS NOT NULL");
+            e.Property(x => x.PaymentCode).HasMaxLength(50);
+            e.Property(x => x.TransactionReference).HasMaxLength(100);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.AmountSubtotal).HasPrecision(18, 2);
+            e.Property(x => x.TaxAmountTotal).HasPrecision(18, 2);
+            e.Property(x => x.GrossAmount).HasPrecision(18, 2);
+            e.Property(x => x.BillingLine1).HasMaxLength(200);
+            e.Property(x => x.BillingLine2).HasMaxLength(200);
+            e.Property(x => x.BillingCity).HasMaxLength(100);
+            e.Property(x => x.BillingState).HasMaxLength(50);
+            e.Property(x => x.BillingPostalCode).HasMaxLength(20);
+            e.Property(x => x.BillingCountry).HasMaxLength(2);
+            e.Property(x => x.StripeTaxTransactionId).HasMaxLength(100);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+            e.HasOne(x => x.PaymentTransaction).WithMany().HasForeignKey(x => x.PaymentTransactionId);
+            e.HasMany(x => x.Lines).WithOne(x => x.CollectedTaxRecord).HasForeignKey(x => x.CollectedTaxRecordId);
+        });
+
+        builder.Entity<CollectedTaxLine>(e =>
+        {
+            e.Property(x => x.Code).HasMaxLength(50);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Type).HasMaxLength(30);
+            e.Property(x => x.Rate).HasPrecision(9, 6);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.CollectedTaxRecordId, x.SortOrder });
         });
 
         builder.Entity<PaymentInvoice>(e =>

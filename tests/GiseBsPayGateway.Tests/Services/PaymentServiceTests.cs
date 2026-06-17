@@ -99,7 +99,8 @@ public class PaymentServiceTests
             settings.Object,
             Mock.Of<IAuditService>(),
             Mock.Of<IInvoiceService>(),
-            Mock.Of<IInvoiceLinkBuilder>());
+            Mock.Of<IInvoiceLinkBuilder>(),
+            Mock.Of<ICollectedTaxService>());
 
         var result = await sut.CreateCheckoutSessionAsync(app, CreateCheckoutRequest(embedded: true));
 
@@ -263,13 +264,18 @@ public class PaymentServiceTests
         invoiceLinks.Setup(l => l.BuildDownloadUrl(It.IsAny<string>()))
             .Returns((string code) => $"/api/invoices/{code}/download");
 
+        var collectedTax = new Mock<ICollectedTaxService>();
+        collectedTax.Setup(s => s.GetByPaymentCodeAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CollectedTaxRecord?)null);
+
         return new PaymentService(
             db,
             stripe.Object,
             settings.Object,
             Mock.Of<IAuditService>(),
             invoiceService.Object,
-            invoiceLinks.Object);
+            invoiceLinks.Object,
+            collectedTax.Object);
     }
 
     private static CreateCheckoutSessionRequest CreateCheckoutRequest(

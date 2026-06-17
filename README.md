@@ -47,6 +47,7 @@ GiseBsPayGateWay/
 - `Customer` — client final par application
 - `Product` / `PricingPlan` — catalogue tarifaire
 - `PaymentTransaction` — paiement avec code interne unique
+- `CollectedTaxRecord` / `CollectedTaxLine` — taxes collectées par paiement (adresse, composantes, réf. Stripe)
 - `Subscription` — abonnements mensuels/annuels
 - `StripeWebhookEvent` — journal des webhooks
 - `AuditLog` — piste d'audit complète
@@ -58,7 +59,9 @@ GiseBsPayGateWay/
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | `POST` | `/api/checkout/session` | Créer une session Stripe Checkout |
-| `GET` | `/api/payments/{paymentCode}` | Statut d'un paiement |
+| `GET` | `/api/payments/{paymentCode}` | Statut d'un paiement (inclut `taxBreakdown`, adresse) |
+| `POST` | `/api/tax/calculate` | Estimation des taxes (Stripe Tax) |
+| `GET` | `/api/tax/collected?from=&to=` | Taxes collectées (par application) |
 | `GET` | `/api/customers/{customerCode}/subscriptions` | Abonnements d'un client |
 | `POST` | `/api/subscriptions/cancel` | Annuler un abonnement |
 | `POST` | `/api/webhooks/stripe` | Webhook Stripe (signature vérifiée) |
@@ -90,6 +93,41 @@ curl -X POST https://pay.gisebs.com/api/checkout/session \
     "successUrl": "https://holotuto.com/payment/success",
     "cancelUrl": "https://holotuto.com/payment/cancel"
   }'
+```
+
+### Taxes collectées
+
+Lors d'un paiement réussi (`checkout.session.completed` ou `invoice.paid`), Pay Gateway enregistre une fiche `CollectedTaxRecord` :
+
+- date de collecte (`collectedAt`)
+- adresse de facturation complète
+- montants (sous-total, taxes, total)
+- composantes fiscales (code, nom, taux, montant, type) — ex. GST + QST au Québec
+- référence transaction Stripe (`transactionReference`, `stripeTaxTransactionId` optionnel)
+
+`GET /api/payments/{paymentCode}` expose `taxBreakdown[]` et `billingAddress` lorsque l'enregistrement existe.
+
+Exemple de composante pour un paiement Québec (100 $ + taxes) :
+
+```json
+{
+  "paymentCode": "PAY-BOUTIQUEGISE-abc123",
+  "taxAmount": 14.98,
+  "grossAmount": 114.98,
+  "billingCountry": "CA",
+  "billingState": "QC",
+  "billingAddress": {
+    "line1": "1200 rue Edison",
+    "city": "Québec",
+    "state": "QC",
+    "postalCode": "G3K 0P6",
+    "country": "CA"
+  },
+  "taxBreakdown": [
+    { "code": "ca_gst", "name": "GST", "rate": 0.05, "amount": 5.00, "type": "federal" },
+    { "code": "ca_qst", "name": "QST", "rate": 0.09975, "amount": 9.98, "type": "provincial" }
+  ]
+}
 ```
 
 ## Démarrage local

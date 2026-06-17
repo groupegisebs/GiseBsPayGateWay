@@ -130,6 +130,7 @@ builder.Services.AddScoped<IWebhookService, WebhookService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();
+builder.Services.AddScoped<ICollectedTaxService, CollectedTaxService>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();
