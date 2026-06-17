@@ -1,4 +1,5 @@
 using GiseBsPayGateway.Data;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,14 @@ public class IndexModel : PageModel
     private readonly ApplicationDbContext _db;
 
     public IndexModel(ApplicationDbContext db) => _db = db;
+
+    [BindProperty(SupportsGet = true)]
+    public int Page { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true)]
+    public string? Search { get; set; }
+
+    public AdminPaginationInfo Pagination { get; private set; } = null!;
 
     public IList<InvoiceListItem> Invoices { get; private set; } = [];
 
@@ -29,10 +38,32 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Invoices = await _db.PaymentInvoices.AsNoTracking()
-            .Include(x => x.ClientApplication)
+        var (page, search) = AdminListPagination.Parse(Page, Search);
+        Search = search;
+
+        var query = _db.PaymentInvoices.AsNoTracking()
+            .Include(x => x.ClientApplication);
+
+        if (search is not null)
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.InvoiceCode, $"%{search}%") ||
+                EF.Functions.ILike(x.ClientApplication.Name, $"%{search}%") ||
+                EF.Functions.ILike(x.CustomerCode, $"%{search}%") ||
+                EF.Functions.ILike(x.CustomerEmail, $"%{search}%") ||
+                EF.Functions.ILike(x.ProductName, $"%{search}%") ||
+                EF.Functions.ILike(x.PlanCode, $"%{search}%") ||
+                EF.Functions.ILike(x.Status.ToString(), $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        Pagination = AdminListPagination.Create(page, search, totalCount);
+        Page = Pagination.Page;
+
+        Invoices = await query
             .OrderByDescending(x => x.InvoiceDate)
-            .Take(200)
+            .Skip(Pagination.Skip)
+            .Take(AdminListPagination.PageSize)
             .Select(x => new InvoiceListItem(
                 x.Id,
                 x.InvoiceCode,

@@ -1,4 +1,5 @@
 using GiseBsPayGateway.Data;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,14 @@ public class IndexModel : PageModel
     private readonly ApplicationDbContext _db;
 
     public IndexModel(ApplicationDbContext db) => _db = db;
+
+    [BindProperty(SupportsGet = true)]
+    public int Page { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true)]
+    public string? Search { get; set; }
+
+    public AdminPaginationInfo Pagination { get; private set; } = null!;
 
     public IList<TransactionViewModel> Transactions { get; private set; } = [];
 
@@ -31,12 +40,35 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Transactions = await _db.PaymentTransactions.AsNoTracking()
+        var (page, search) = AdminListPagination.Parse(Page, Search);
+        Search = search;
+
+        var query = _db.PaymentTransactions.AsNoTracking()
             .Include(x => x.ClientApplication)
             .Include(x => x.Customer)
-            .Include(x => x.Product)
+            .Include(x => x.Product);
+
+        if (search is not null)
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.PaymentCode, $"%{search}%") ||
+                EF.Functions.ILike(x.ClientApplication.Name, $"%{search}%") ||
+                EF.Functions.ILike(x.Customer.CustomerCode, $"%{search}%") ||
+                EF.Functions.ILike(x.Product.ProductCode, $"%{search}%") ||
+                EF.Functions.ILike(x.Status.ToString(), $"%{search}%") ||
+                (x.StripePaymentIntentId != null && EF.Functions.ILike(x.StripePaymentIntentId, $"%{search}%")) ||
+                (x.StripeCheckoutSessionId != null && EF.Functions.ILike(x.StripeCheckoutSessionId, $"%{search}%")) ||
+                _db.PaymentInvoices.Any(i => i.PaymentTransactionId == x.Id && EF.Functions.ILike(i.InvoiceCode, $"%{search}%")));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        Pagination = AdminListPagination.Create(page, search, totalCount);
+        Page = Pagination.Page;
+
+        Transactions = await query
             .OrderByDescending(x => x.CreatedAt)
-            .Take(200)
+            .Skip(Pagination.Skip)
+            .Take(AdminListPagination.PageSize)
             .Select(x => new TransactionViewModel(
                 x.CreatedAt,
                 x.PaymentCode,
