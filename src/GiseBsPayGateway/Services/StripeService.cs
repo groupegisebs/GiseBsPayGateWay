@@ -162,7 +162,7 @@ public class StripeService : IStripeService
 
         if (embedded)
         {
-            options.UiMode = "embedded";
+            options.UiMode = "embedded_page";
             options.ReturnUrl = successUrl.Contains("{CHECKOUT_SESSION_ID}", StringComparison.Ordinal)
                 ? successUrl
                 : AppendQuery(successUrl, "session_id={CHECKOUT_SESSION_ID}");
