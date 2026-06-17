@@ -54,17 +54,12 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
     }
 
     [Fact]
-    public async Task PostCheckoutSession_AvecJwtEtCatalogue_Retourne200()
+    public async Task PostCheckoutSession_AvecApiKeyEtCatalogue_Retourne200()
     {
         var (appCode, rawKey) = await SeedTestAppAsync();
         await SeedCatalogAsync(appCode);
 
-        var client = _factory.CreateClient();
-        var tokenResponse = await client.PostAsJsonAsync("/api/auth/token", new JwtTokenRequest(appCode, rawKey));
-        var token = await tokenResponse.Content.ReadFromJsonAsync<JwtTokenResponse>();
-
-        client.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        var client = CreateApiKeyClient(appCode, rawKey);
 
         var checkoutBody = new CreateCheckoutSessionRequest(
             "CUST-INT-1", "integration@test.com", "Integration Test", null,
@@ -75,7 +70,7 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var session = await response.Content.ReadFromJsonAsync<CheckoutSessionResponse>();
         Assert.NotNull(session);
-        Assert.StartsWith($"PAY-{appCode}-", session.PaymentCode);
+        Assert.StartsWith($"PAY-{appCode.ToUpperInvariant()}-", session.PaymentCode);
         Assert.Equal("cs_secret_integration", session.ClientSecret);
     }
 
@@ -83,12 +78,7 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
     public async Task PostCheckoutSession_ProduitInexistant_Retourne400Json()
     {
         var (appCode, rawKey) = await SeedTestAppAsync();
-        var client = _factory.CreateClient();
-        var tokenResponse = await client.PostAsJsonAsync("/api/auth/token", new JwtTokenRequest(appCode, rawKey));
-        var token = await tokenResponse.Content.ReadFromJsonAsync<JwtTokenResponse>();
-
-        client.DefaultRequestHeaders.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token!.AccessToken);
+        var client = CreateApiKeyClient(appCode, rawKey);
 
         var checkoutBody = new CreateCheckoutSessionRequest(
             "C1", "a@b.com", null, null, "INEXISTANT", "MONTHLY",
@@ -101,6 +91,17 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
         Assert.NotNull(error);
         Assert.Contains("INEXISTANT", error.Error);
     }
+
+    private static HttpClient CreateApiKeyClient(PayGatewayWebApplicationFactory factory, string appCode, string rawKey)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-App-Code", appCode);
+        client.DefaultRequestHeaders.Add("X-Api-Key", rawKey);
+        return client;
+    }
+
+    private HttpClient CreateApiKeyClient(string appCode, string rawKey) =>
+        CreateApiKeyClient(_factory, appCode, rawKey);
 
     private async Task<(string AppCode, string RawApiKey)> SeedTestAppAsync()
     {
