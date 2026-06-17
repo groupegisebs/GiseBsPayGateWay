@@ -39,6 +39,15 @@ public interface IJwtTokenService
     DTOs.JwtTokenResponse GenerateToken(Entities.ClientApplication app);
 }
 
+public interface ICatalogService
+{
+    Task<DTOs.ProductResponse> CreateProductAsync(Entities.ClientApplication app, DTOs.CreateProductRequest request, CancellationToken cancellationToken = default);
+    Task<DTOs.PricingPlanResponse> CreatePlanAsync(Entities.ClientApplication app, string productCode, DTOs.CreatePricingPlanRequest request, CancellationToken cancellationToken = default);
+    Task<DTOs.CatalogItemResponse> CreateCatalogItemAsync(Entities.ClientApplication app, DTOs.CreateCatalogItemRequest request, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DTOs.ProductResponse>> ListProductsAsync(Entities.ClientApplication app, CancellationToken cancellationToken = default);
+    Task<DTOs.ProductResponse?> GetProductAsync(Entities.ClientApplication app, string productCode, CancellationToken cancellationToken = default);
+}
+
 public interface IDashboardService
 {
     Task<DashboardStats> GetStatsAsync(CancellationToken cancellationToken = default);

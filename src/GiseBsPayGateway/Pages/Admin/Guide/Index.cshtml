@@ -86,10 +86,39 @@ Content-Type: application/json
   "cancelUrl": "https://holotuto.com/payment/cancel"
 }</code></pre>
 
+        <h5 class="mt-4">Catalogue — créer produit / plan via API</h5>
+        <p>Les applications clientes peuvent enregistrer leur catalogue sans passer par l'admin :</p>
+        <pre class="bg-light p-3 rounded small"><code>POST @Model.BaseUrl/api/products/catalog
+X-App-Code: BOUTIQUEGISE
+X-Api-Key: gbsk_...
+Content-Type: application/json
+
+{
+  "productCode": "AGENT-CODE",
+  "productName": "Abonnement agent",
+  "description": "Optionnel",
+  "planCode": "MONTHLY",
+  "planName": "Mensuel",
+  "amount": 24,
+  "currency": "USD",
+  "syncToStripe": true
+}</code></pre>
+        <p class="small text-muted mb-0">
+            Codes plan autorisés : <code>MONTHLY</code>, <code>YEARLY</code>, <code>ONE-TIME</code>.
+            Devises : <code>USD</code>, <code>EUR</code>, <code>GBP</code>, <code>CAD</code>, <code>CHF</code>.
+            Liste complète : <code>GET /api/products/options</code>.
+            Endpoints : <code>GET /api/products</code>, <code>POST /api/products/catalog</code>, etc.
+        </p>
+
         <h5 class="mt-4">Endpoints disponibles</h5>
         <table class="table table-sm">
             <thead><tr><th>Méthode</th><th>Route</th><th>Description</th></tr></thead>
             <tbody>
+                <tr><td><code>POST</code></td><td><code>/api/products/catalog</code></td><td>Créer produit + plan (catalogue complet)</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/products</code></td><td>Créer un produit</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/products/{code}/plans</code></td><td>Ajouter un plan à un produit</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/products</code></td><td>Lister les produits de l'application</td></tr>
+                <tr><td><code>GET</code></td><td><code>/api/products/{code}</code></td><td>Détail produit + plans actifs</td></tr>
                 <tr><td><code>POST</code></td><td><code>/api/checkout/session</code></td><td>Créer une session Stripe Checkout</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/payments/{paymentCode}</code></td><td>Statut d'un paiement</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/customers/{customerCode}/subscriptions</code></td><td>Abonnements d'un client</td></tr>

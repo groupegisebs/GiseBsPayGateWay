@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using GiseBsPayGateway.Constants;
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.Entities;
-using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -26,6 +26,10 @@ public class CreateModel : PageModel
 
     public SelectList Products { get; private set; } = null!;
 
+    public SelectList PlanCodes { get; private set; } = null!;
+
+    public SelectList Currencies { get; private set; } = null!;
+
     public bool IsCopyMode { get; private set; }
 
     public string? CopySourcePlanCode { get; private set; }
@@ -35,8 +39,8 @@ public class CreateModel : PageModel
         [Required, Display(Name = "Produit")]
         public Guid ProductId { get; set; }
 
-        [Required, MaxLength(50), Display(Name = "Code plan")]
-        public string PlanCode { get; set; } = string.Empty;
+        [Required, Display(Name = "Code plan")]
+        public string PlanCode { get; set; } = CatalogOptions.Monthly;
 
         [Required, MaxLength(200), Display(Name = "Nom")]
         public string Name { get; set; } = string.Empty;
@@ -44,16 +48,13 @@ public class CreateModel : PageModel
         [Required, Range(0.01, 999999), Display(Name = "Montant")]
         public decimal Amount { get; set; }
 
-        [Required, MaxLength(3), Display(Name = "Devise")]
-        public string Currency { get; set; } = "eur";
-
-        [Required, Display(Name = "Intervalle")]
-        public BillingInterval BillingInterval { get; set; }
+        [Required, Display(Name = "Devise")]
+        public string Currency { get; set; } = "usd";
     }
 
     public async Task<IActionResult> OnGetAsync(Guid? copyFrom, CancellationToken cancellationToken)
     {
-        Products = await LoadProductsAsync(cancellationToken);
+        await LoadSelectListsAsync(cancellationToken);
 
         if (copyFrom is null)
         {
@@ -76,11 +77,12 @@ public class CreateModel : PageModel
         Input = new InputModel
         {
             ProductId = source.ProductId,
-            PlanCode = suggestedPlanCode,
+            PlanCode = CatalogOptions.TryGetPlanCode(suggestedPlanCode, out var option)
+                ? option.Code
+                : CatalogOptions.Monthly,
             Name = suggestedPlanCode == source.PlanCode ? source.Name : $"{source.Name} (copie)",
             Amount = source.Amount,
-            Currency = source.Currency,
-            BillingInterval = source.BillingInterval
+            Currency = CatalogOptions.TryGetCurrency(source.Currency, out var currency) ? currency : "usd"
         };
 
         return Page();
@@ -88,16 +90,27 @@ public class CreateModel : PageModel
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
-        Products = await LoadProductsAsync(cancellationToken);
+        await LoadSelectListsAsync(cancellationToken);
 
         if (!ModelState.IsValid)
         {
             return Page();
         }
 
-        var planCode = Input.PlanCode.ToUpperInvariant();
+        CatalogOptions.PlanCodeOption planOption;
+        try
+        {
+            planOption = CatalogOptions.ResolvePlanCode(Input.PlanCode);
+            Input.Currency = CatalogOptions.ResolveCurrency(Input.Currency);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return Page();
+        }
+
         if (await _db.PricingPlans.AnyAsync(
-                x => x.ProductId == Input.ProductId && x.PlanCode == planCode && x.IsActive,
+                x => x.ProductId == Input.ProductId && x.PlanCode == planOption.Code && x.IsActive,
                 cancellationToken))
         {
             ModelState.AddModelError(nameof(Input.PlanCode),
@@ -108,11 +121,11 @@ public class CreateModel : PageModel
         var plan = new PricingPlan
         {
             ProductId = Input.ProductId,
-            PlanCode = planCode,
+            PlanCode = planOption.Code,
             Name = Input.Name,
             Amount = Input.Amount,
-            Currency = Input.Currency.ToLowerInvariant(),
-            BillingInterval = Input.BillingInterval,
+            Currency = Input.Currency,
+            BillingInterval = planOption.BillingInterval,
             IsActive = true
         };
 
@@ -120,6 +133,21 @@ public class CreateModel : PageModel
         await _db.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync("PricingPlanCreated", nameof(PricingPlan), plan.Id.ToString(), true, plan.PlanCode, userName: User.Identity?.Name);
         return RedirectToPage("Index");
+    }
+
+    private async Task LoadSelectListsAsync(CancellationToken cancellationToken)
+    {
+        Products = await LoadProductsAsync(cancellationToken);
+        PlanCodes = new SelectList(
+            CatalogOptions.PlanCodes.Select(x => new { x.Code, Label = $"{x.Code} — {x.Label}" }),
+            "Code",
+            "Label",
+            Input.PlanCode);
+        Currencies = new SelectList(
+            CatalogOptions.Currencies.Select(x => new { x.Code, x.Label }),
+            "Code",
+            "Label",
+            Input.Currency);
     }
 
     private async Task<SelectList> LoadProductsAsync(CancellationToken cancellationToken)
@@ -134,21 +162,16 @@ public class CreateModel : PageModel
 
     private async Task<string> ResolveCopyPlanCodeAsync(Guid productId, string planCode, CancellationToken cancellationToken)
     {
-        if (!await _db.PricingPlans.AnyAsync(
-                x => x.ProductId == productId && x.PlanCode == planCode && x.IsActive,
+        if (CatalogOptions.TryGetPlanCode(planCode, out var option) &&
+            !await _db.PricingPlans.AnyAsync(
+                x => x.ProductId == productId && x.PlanCode == option.Code && x.IsActive,
                 cancellationToken))
         {
-            return planCode;
+            return option.Code;
         }
 
-        for (var i = 2; i < 100; i++)
+        foreach (var candidate in CatalogOptions.PlanCodes.Select(x => x.Code))
         {
-            var candidate = $"{planCode}-V{i}";
-            if (candidate.Length > 50)
-            {
-                candidate = candidate[..50];
-            }
-
             if (!await _db.PricingPlans.AnyAsync(
                     x => x.ProductId == productId && x.PlanCode == candidate && x.IsActive,
                     cancellationToken))
@@ -157,6 +180,6 @@ public class CreateModel : PageModel
             }
         }
 
-        return $"{planCode}-COPY-{DateTime.UtcNow:yyyyMMddHHmm}"[..50];
+        return CatalogOptions.Monthly;
     }
 }

@@ -92,6 +92,35 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
         Assert.Contains("INEXISTANT", error.Error);
     }
 
+    [Fact]
+    public async Task PostCatalogItem_AvecApiKey_CreeProduitEtPlan()
+    {
+        var (appCode, rawKey) = await SeedTestAppAsync();
+        var client = CreateApiKeyClient(appCode, rawKey);
+
+        var request = new CreateCatalogItemRequest(
+            "API-CAT-1", "Produit via API", "Créé par test intégration",
+            "MONTHLY", "Plan mensuel", 19m, "USD", SyncToStripe: false);
+
+        var response = await client.PostAsJsonAsync("/api/products/catalog", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var item = await response.Content.ReadFromJsonAsync<CatalogItemResponse>();
+        Assert.NotNull(item);
+        Assert.Equal("API-CAT-1", item.Product.ProductCode);
+        Assert.Equal("MONTHLY", item.Plan.PlanCode);
+    }
+
+    [Fact]
+    public async Task PostProductsCatalog_SansAuth_Retourne401()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/products/catalog", new CreateCatalogItemRequest(
+            "X", "X", null, "MONTHLY", "M", 1m, "USD"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     private static HttpClient CreateApiKeyClient(PayGatewayWebApplicationFactory factory, string appCode, string rawKey)
     {
         var client = factory.CreateClient();
