@@ -110,6 +110,29 @@ Content-Type: application/json
             Endpoints : <code>GET /api/products</code>, <code>POST /api/products/catalog</code>, etc.
         </p>
 
+        <h5 class="mt-4">Calcul des taxes (inscription / profil)</h5>
+        <p>Permet aux applications clientes (ex. BoutiqueGisie) d'obtenir les taxes applicables pour une adresse via Stripe Tax Calculation API. Utilisé à la création de compte pour stocker la juridiction fiscale de l'acheteur.</p>
+        <pre class="bg-light p-3 rounded small"><code>POST @Model.BaseUrl/api/tax/calculate
+X-App-Code: BOUTIQUEGISE
+X-Api-Key: gbsk_...
+Content-Type: application/json
+
+{
+  "billingAddress": {
+    "line1": "1200 rue Edison",
+    "city": "Québec",
+    "state": "QC",
+    "postalCode": "G3K 0P6",
+    "country": "CA"
+  },
+  "currency": "cad",
+  "amountMinorUnits": 10000
+}</code></pre>
+        <p class="small text-muted mb-0">
+            Réponse 200 : <code>jurisdictionCode</code> (ex. <code>CA-QC</code>), <code>estimatedTaxRate</code>, <code>components</code> (gst, qst…), <code>source: stripe</code>.
+            Erreur 400 si adresse invalide. Les montants réels au paiement restent calculés par Stripe Tax au checkout.
+        </p>
+
         <h5 class="mt-4">Endpoints disponibles</h5>
         <table class="table table-sm">
             <thead><tr><th>Méthode</th><th>Route</th><th>Description</th></tr></thead>
@@ -120,6 +143,7 @@ Content-Type: application/json
                 <tr><td><code>GET</code></td><td><code>/api/products</code></td><td>Lister les produits de l'application</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/products/{code}</code></td><td>Détail produit + plans actifs</td></tr>
                 <tr><td><code>POST</code></td><td><code>/api/checkout/session</code></td><td>Créer une session Stripe Checkout</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/tax/calculate</code></td><td>Calculer les taxes applicables pour une adresse (Stripe Tax Calculation API)</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/payments/{paymentCode}</code></td><td>Statut d'un paiement</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/customers/{customerCode}/subscriptions</code></td><td>Abonnements d'un client</td></tr>
                 <tr><td><code>POST</code></td><td><code>/api/subscriptions/cancel</code></td><td>Annuler un abonnement</td></tr>
@@ -206,6 +230,14 @@ sudo chown ubuntu:ubuntu /opt/apps/gisebs-pay-gateway</code></pre>
             <li><code>customer.subscription.deleted</code></li>
         </ul>
         <p>Copiez le <strong>Signing secret</strong> généré par Stripe dans la page de configuration admin.</p>
+
+        <h5 class="mt-4">Stripe Tax</h5>
+        <p>Activez Stripe Tax dans le dashboard Stripe (Settings → Tax) et ajoutez vos immatriculations fiscales (ex. Canada + Québec pour GST/QST).</p>
+        <ul>
+            <li><code>POST /api/tax/calculate</code> — estimation à l'inscription (Calculation API)</li>
+            <li>Checkout — <code>automatic_tax</code> activé sur chaque session</li>
+        </ul>
+        <p class="small text-muted">Sans immatriculation active dans une juridiction, Stripe renvoie les taux mais ne collecte pas la taxe au checkout (<code>not_collecting</code>).</p>
 
         <div class="alert alert-warning mt-3 mb-0">
             Les clés secrètes Stripe ne sont jamais exposées dans les logs ni renvoyées par l'API. Seul le dashboard admin permet de les modifier.

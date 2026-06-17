@@ -143,3 +143,17 @@ public record PricingPlanResponse(
     DateTime CreatedAt);
 
 public record CatalogItemResponse(ProductResponse Product, PricingPlanResponse Plan);
+
+public record TaxCalculationRequest(
+    BillingAddressDto BillingAddress,
+    string? Currency = null,
+    long? AmountMinorUnits = null);
+
+public record TaxComponentDto(string Code, string Name, decimal Rate, string Type);
+
+public record TaxCalculationResponse(
+    string JurisdictionCode,
+    decimal EstimatedTaxRate,
+    IReadOnlyList<string> TaxLabels,
+    IReadOnlyList<TaxComponentDto> Components,
+    string Source = "stripe");

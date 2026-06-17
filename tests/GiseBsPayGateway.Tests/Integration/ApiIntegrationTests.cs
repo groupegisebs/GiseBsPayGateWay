@@ -40,6 +40,20 @@ public class ApiIntegrationTests : IClassFixture<PayGatewayWebApplicationFactory
     }
 
     [Fact]
+    public async Task PostTaxCalculate_SansAuth_Retourne401()
+    {
+        var client = _factory.CreateClient();
+        var body = new TaxCalculationRequest(
+            new BillingAddressDto("1200 rue Edison", null, "Québec", "QC", "G3K 0P6", "CA"),
+            "cad",
+            10000);
+
+        var response = await client.PostAsJsonAsync("/api/tax/calculate", body);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task PostAuthToken_CredentialsValides_RetourneJwt()
     {
         var (appCode, rawKey) = await SeedTestAppAsync();

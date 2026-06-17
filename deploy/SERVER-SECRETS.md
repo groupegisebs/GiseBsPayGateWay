@@ -97,6 +97,41 @@ Mettez `IsLiveMode: true` uniquement avec des clés `pk_live_` / `sk_live_`.
 
 ---
 
+## Étape 4 — Stripe Tax (calcul + collecte)
+
+1. [dashboard.stripe.com](https://dashboard.stripe.com) → **Settings** → **Tax** → activer Stripe Tax.
+2. **Registrations** : ajoutez vos immatriculations (ex. Canada GST/HST + Québec QST/TVQ).
+3. Vérifiez l'endpoint de calcul après déploiement :
+
+```powershell
+$body = @{
+    billingAddress = @{
+        line1      = "1200 rue Edison"
+        city       = "Québec"
+        state      = "QC"
+        postalCode = "G3K 0P6"
+        country    = "CA"
+    }
+    currency         = "cad"
+    amountMinorUnits = 10000
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method Post `
+    -Uri "https://gisebsapipaygateway.gisebs.com/api/tax/calculate" `
+    -ContentType "application/json" `
+    -Headers @{
+        "X-App-Code" = "BOUTIQUEGISE"
+        "X-Api-Key"  = "gbsk_VOTRE_CLE"
+    } `
+    -Body $body
+```
+
+Attendu : `jurisdictionCode` = `CA-QC`, composantes `gst` + `qst`, `source` = `stripe`.
+
+BoutiqueGisie appelle cet endpoint à l'inscription et à la mise à jour profil ; repli local si indisponible.
+
+---
+
 ## Comportement de l’application
 
 1. Au démarrage, l’app charge **`/opt/apps/gisebs-pay-gateway/secrets.json`** (ou le chemin `GISEBSPAY_SECRETS_FILE`).
@@ -150,5 +185,7 @@ Dans l’admin → **Stripe** : bandeau indiquant que les clés viennent du fich
 - [ ] GitHub : SSH + `GISEBSPAY_CONNECTION_STRING` seulement
 - [ ] Serveur : `/opt/apps/gisebs-pay-gateway/secrets.json` créé (`chmod 600`)
 - [ ] Stripe : webhook configuré vers `/api/webhooks/stripe`
+- [ ] Stripe Tax activé + immatriculations Canada/QC (si applicable)
+- [ ] `POST /api/tax/calculate` testé (adresse QC → CA-QC)
 - [ ] Service redémarré
 - [ ] Admin Stripe affiche « configuré via fichier serveur »
