@@ -142,11 +142,15 @@ public class StripeService : IStripeService
         var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken)
             ?? throw new InvalidOperationException("Impossible de créer ou récupérer le client Stripe.");
 
-        if (billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1))
+        var hasPrefilledBillingAddress = billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1);
+        if (hasPrefilledBillingAddress)
         {
-            var formattedAddress = StripeAddressFormatter.Format(billingAddress);
+            var formattedAddress = StripeAddressFormatter.Format(billingAddress!);
             await ApplyStripeCustomerAddressAsync(stripeCustomerId, formattedAddress, cancellationToken);
         }
+
+        var (billingAddressCollection, customerUpdateAddress) =
+            StripeCheckoutTaxOptions.Resolve(hasPrefilledBillingAddress, customerUpdate);
 
         var sessionService = new SessionService();
         var options = new SessionCreateOptions
@@ -155,7 +159,7 @@ public class StripeService : IStripeService
             Customer = stripeCustomerId,
             // Stripe Tax : activer dans le Dashboard (Settings → Tax), ajouter les enregistrements fiscaux canadiens (GST/HST/QST).
             AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
-            BillingAddressCollection = "required",
+            BillingAddressCollection = billingAddressCollection,
             LineItems =
             [
                 new SessionLineItemOptions
@@ -173,11 +177,11 @@ public class StripeService : IStripeService
             }
         };
 
-        if (!string.IsNullOrWhiteSpace(customerUpdate?.Address))
+        if (!string.IsNullOrWhiteSpace(customerUpdateAddress))
         {
             options.CustomerUpdate = new SessionCustomerUpdateOptions
             {
-                Address = customerUpdate.Address
+                Address = customerUpdateAddress
             };
         }
 
