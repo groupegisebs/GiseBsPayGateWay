@@ -25,6 +25,8 @@
     <div class="alert alert-danger">@error</div>
 }
 
+<partial name="_AdminListToolbar" model="Model.Pagination" />
+
 <table class="table table-striped align-middle">
     <thead>
         <tr>
@@ -67,6 +69,8 @@
                 </a>
                 <form method="post" asp-page-handler="ToggleActive" class="d-inline">
                     <input type="hidden" name="planId" value="@item.Id" />
+                    <input type="hidden" name="page" value="@Model.PageNumber" />
+                    <input type="hidden" name="search" value="@Model.Search" />
                     @if (item.IsActive)
                     {
                         <button type="submit" class="btn btn-sm btn-outline-danger"

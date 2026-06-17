@@ -1,4 +1,5 @@
 using GiseBsPayGateway.Data;
+using GiseBsPayGateway.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
@@ -11,8 +12,8 @@ public class IndexModel : PageModel
 
     public IndexModel(ApplicationDbContext db) => _db = db;
 
-    [BindProperty(SupportsGet = true)]
-    public int Page { get; set; } = 1;
+    [BindProperty(SupportsGet = true, Name = "page")]
+    public int PageNumber { get; set; } = 1;
 
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
@@ -25,10 +26,10 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        var (page, search) = AdminListPagination.Parse(Page, Search);
+        var (page, search) = AdminListPagination.Parse(PageNumber, Search);
         Search = search;
 
-        var query = _db.Products.AsNoTracking()
+        IQueryable<Product> query = _db.Products.AsNoTracking()
             .Include(x => x.ClientApplication);
 
         if (search is not null)
@@ -42,7 +43,7 @@ public class IndexModel : PageModel
 
         var totalCount = await query.CountAsync(cancellationToken);
         Pagination = AdminListPagination.Create(page, search, totalCount);
-        Page = Pagination.Page;
+        PageNumber = Pagination.Page;
 
         Products = await query
             .OrderBy(x => x.ClientApplication.AppCode)

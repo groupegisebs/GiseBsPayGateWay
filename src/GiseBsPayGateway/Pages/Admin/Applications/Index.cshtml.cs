@@ -26,6 +26,14 @@ public class IndexModel : PageModel
         _logger = logger;
     }
 
+    [BindProperty(SupportsGet = true, Name = "page")]
+    public int PageNumber { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true)]
+    public string? Search { get; set; }
+
+    public AdminPaginationInfo Pagination { get; private set; } = null!;
+
     public IList<ApplicationViewModel> Applications { get; private set; } = [];
     public string? NewApiKey { get; private set; }
     public string? LoadError { get; private set; }
@@ -36,10 +44,29 @@ public class IndexModel : PageModel
     {
         try
         {
-            var apps = await _db.ClientApplications
+            var (page, search) = AdminListPagination.Parse(PageNumber, Search);
+            Search = search;
+
+            IQueryable<ClientApplication> query = _db.ClientApplications
                 .AsNoTracking()
-                .Include(x => x.ApiKeys)
+                .Include(x => x.ApiKeys);
+
+            if (search is not null)
+            {
+                query = query.Where(x =>
+                    EF.Functions.ILike(x.AppCode, $"%{search}%") ||
+                    EF.Functions.ILike(x.Name, $"%{search}%") ||
+                    (x.AllowedDomains != null && EF.Functions.ILike(x.AllowedDomains, $"%{search}%")));
+            }
+
+            var totalCount = await query.CountAsync(cancellationToken);
+            Pagination = AdminListPagination.Create(page, search, totalCount);
+            PageNumber = Pagination.Page;
+
+            var apps = await query
                 .OrderBy(x => x.AppCode)
+                .Skip(Pagination.Skip)
+                .Take(AdminListPagination.PageSize)
                 .ToListAsync(cancellationToken);
 
             Applications = apps
@@ -56,6 +83,7 @@ public class IndexModel : PageModel
         {
             _logger.LogError(ex, "Impossible de charger les applications clientes");
             LoadError = "Impossible de charger la liste. Vérifiez la connexion PostgreSQL et les migrations EF.";
+            Pagination = AdminListPagination.Create(1, Search, 0);
         }
     }
 
