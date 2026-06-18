@@ -214,6 +214,12 @@ public class CatalogService : ICatalogService
         await SyncProductToStripeInternalAsync(product, cancellationToken);
 
         var activePlans = product.PricingPlans.Where(x => x.IsActive).ToList();
+        if (activePlans.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Aucun plan actif pour « {product.ProductCode} ». Créez d'abord un plan tarifaire (ex. MONTHLY).");
+        }
+
         foreach (var plan in activePlans)
         {
             await SyncPlanToStripeAsync(product, plan, cancellationToken);

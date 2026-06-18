@@ -1,5 +1,6 @@
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.DTOs;
+using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Services;
 using GiseBsPayGateway.Tests.Infrastructure;
 using Moq;
@@ -116,5 +117,32 @@ public class CatalogServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             sut.SyncProductToStripeAsync(app, "MISSING-PRODUCT"));
+    }
+
+    [Fact]
+    public async Task SyncProductToStripeAsync_SansPlanActif_LeveInvalidOperationException()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(SyncProductToStripeAsync_SansPlanActif_LeveInvalidOperationException));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+
+        db.Products.Add(new Product
+        {
+            ClientApplicationId = app.Id,
+            ProductCode = "NO-PLAN",
+            Name = "No plan product",
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.EnsureStripeProductAsync(It.IsAny<Entities.Product>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("prod_no_plan");
+
+        var sut = new CatalogService(db, stripe.Object, Mock.Of<IAuditService>());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.SyncProductToStripeAsync(app, "NO-PLAN"));
+
+        Assert.Contains("plan actif", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

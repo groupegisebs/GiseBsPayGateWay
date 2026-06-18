@@ -45,6 +45,7 @@
                 @if (item.IsActive)
                 {
                     <form method="post" asp-page-handler="SyncStripe" class="d-inline">
+                        @Html.AntiForgeryToken()
                         <input type="hidden" name="productId" value="@item.Id" />
                         <input type="hidden" name="page" value="@Model.PageNumber" />
                         <input type="hidden" name="search" value="@Model.Search" />

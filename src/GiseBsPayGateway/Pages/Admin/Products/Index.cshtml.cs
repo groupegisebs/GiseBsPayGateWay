@@ -4,6 +4,7 @@ using GiseBsPayGateway.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using ProductEntity = GiseBsPayGateway.Entities.Product;
 
 namespace GiseBsPayGateway.Pages.Admin.Products;
 
@@ -12,12 +13,18 @@ public class IndexModel : PageModel
     private readonly ApplicationDbContext _db;
     private readonly ICatalogService _catalogService;
     private readonly IAuditService _auditService;
+    private readonly ILogger<IndexModel> _logger;
 
-    public IndexModel(ApplicationDbContext db, ICatalogService catalogService, IAuditService auditService)
+    public IndexModel(
+        ApplicationDbContext db,
+        ICatalogService catalogService,
+        IAuditService auditService,
+        ILogger<IndexModel> logger)
     {
         _db = db;
         _catalogService = catalogService;
         _auditService = auditService;
+        _logger = logger;
     }
 
     [BindProperty(SupportsGet = true, Name = "page")]
@@ -43,7 +50,7 @@ public class IndexModel : PageModel
         var (page, search) = AdminListPagination.Parse(PageNumber, Search);
         Search = search;
 
-        IQueryable<Product> query = _db.Products.AsNoTracking()
+        IQueryable<ProductEntity> query = _db.Products.AsNoTracking()
             .Include(x => x.ClientApplication);
 
         if (search is not null)
@@ -97,7 +104,7 @@ public class IndexModel : PageModel
                 product.ClientApplication, product.ProductCode, cancellationToken);
 
             await _auditService.LogAsync(
-                "ProductSyncedToStripeAdmin", nameof(Product), product.Id.ToString(), true,
+                "ProductSyncedToStripeAdmin", nameof(ProductEntity), product.Id.ToString(), true,
                 product.ProductCode, userName: User.Identity?.Name);
 
             TempData["ProductMessage"] =
@@ -106,6 +113,16 @@ public class IndexModel : PageModel
         catch (InvalidOperationException ex)
         {
             TempData["ProductError"] = ex.Message;
+        }
+        catch (Stripe.StripeException ex)
+        {
+            _logger.LogError(ex, "Sync Stripe échoué pour {ProductCode}", product.ProductCode);
+            TempData["ProductError"] = StripeErrorMessages.Format(ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sync Stripe échoué pour {ProductCode}", product.ProductCode);
+            TempData["ProductError"] = $"Synchronisation Stripe impossible : {ex.Message}";
         }
 
         return RedirectToPage(new { page = PageNumber, search = Search });
