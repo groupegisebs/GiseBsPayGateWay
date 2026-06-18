@@ -18,7 +18,8 @@
             <th>Application</th>
             <th>Client</th>
             <th>Produit</th>
-            <th>Montant</th>
+            <th>Montant HT</th>
+            <th>Total TTC</th>
             <th>Taxes</th>
             <th>Frais Stripe</th>
             <th>Net</th>
@@ -37,7 +38,8 @@
             <td>@item.AppName</td>
             <td>@item.CustomerCode</td>
             <td>@item.ProductCode</td>
-            <td>@item.Amount @item.Currency.ToUpper()</td>
+            <td>@item.Amount.ToString("N2") @item.Currency.ToUpper()</td>
+            <td>@(item.TotalAmount?.ToString("N2") ?? "—") @(item.TotalAmount.HasValue ? item.Currency.ToUpper() : "")</td>
             <td>@(item.TaxAmount?.ToString("N2") ?? "—")</td>
             <td>@(item.StripeFee?.ToString("N2") ?? "—")</td>
             <td>@(item.NetAmount?.ToString("N2") ?? "—")</td>

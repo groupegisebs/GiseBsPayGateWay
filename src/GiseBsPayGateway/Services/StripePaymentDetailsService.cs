@@ -138,7 +138,11 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
                 sessionId,
                 new SessionGetOptions
                 {
-                    Expand = ["total_details.breakdown.taxes.rate"]
+                    Expand =
+                    [
+                        "total_details.breakdown.taxes.rate",
+                        "invoice"
+                    ]
                 },
                 cancellationToken: cancellationToken);
         }
@@ -253,7 +257,11 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
                 subscriptionId,
                 new SubscriptionGetOptions
                 {
-                    Expand = ["latest_invoice.payments.data.payment.payment_intent"]
+                    Expand =
+                    [
+                        "latest_invoice.payments.data.payment.payment_intent",
+                        "latest_invoice.total_taxes.tax_rate_details.tax_rate"
+                    ]
                 },
                 cancellationToken: cancellationToken);
         }
@@ -287,7 +295,11 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
                 invoiceId,
                 new InvoiceGetOptions
                 {
-                    Expand = ["payments.data.payment.payment_intent"]
+                    Expand =
+                    [
+                        "payments.data.payment.payment_intent",
+                        "total_taxes.tax_rate_details.tax_rate"
+                    ]
                 },
                 cancellationToken: cancellationToken);
         }

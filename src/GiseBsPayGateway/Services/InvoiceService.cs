@@ -309,6 +309,49 @@ public class InvoiceService : IInvoiceService
             ? await _stripePaymentDetailsService.GetCheckoutSessionAsync(payment.StripeCheckoutSessionId, cancellationToken)
             : null;
 
+        var isSubscription = payment.PricingPlan.BillingInterval != BillingInterval.OneTime
+            || !string.IsNullOrWhiteSpace(checkoutSession?.SubscriptionId)
+            || payment.SubscriptionId.HasValue;
+
+        stripeInvoice ??= await TryResolveStripeInvoiceAsync(payment, checkoutSession, cancellationToken);
+
+        if (isSubscription && stripeInvoice is not null && StripeCheckoutFinancials.NeedsFinancialTaxFields(payment))
+        {
+            StripeCheckoutFinancials.ApplyStripeInvoiceTaxToPayment(payment, stripeInvoice);
+            payment.StripeInvoiceId ??= stripeInvoice.Id;
+            updated = true;
+        }
+
+        if (checkoutSession is not null && StripeCheckoutFinancials.NeedsFinancialTaxFields(payment))
+        {
+            StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, checkoutSession);
+            updated = true;
+        }
+
+        if (!isSubscription && stripeInvoice is null && !string.IsNullOrWhiteSpace(checkoutSession?.InvoiceId))
+        {
+            stripeInvoice = await _stripePaymentDetailsService.GetInvoiceAsync(checkoutSession.InvoiceId, cancellationToken);
+        }
+
+        if (stripeInvoice is not null && StripeCheckoutFinancials.NeedsFinancialTaxFields(payment))
+        {
+            StripeCheckoutFinancials.ApplyStripeInvoiceTaxToPayment(payment, stripeInvoice);
+            payment.StripeInvoiceId ??= stripeInvoice.Id;
+            updated = true;
+        }
+
+        if (StripeCheckoutFinancials.NeedsTaxAmount(payment))
+        {
+            var collectedTax = await _db.CollectedTaxRecords.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.PaymentTransactionId == payment.Id, cancellationToken);
+
+            if (collectedTax is not null)
+            {
+                StripeCheckoutFinancials.ApplyCollectedTaxRecordToPayment(payment, collectedTax);
+                updated = true;
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
         {
             var paymentIntentId = checkoutSession?.PaymentIntentId;
@@ -344,22 +387,6 @@ public class InvoiceService : IInvoiceService
             }
         }
 
-        if (checkoutSession is not null
-            && (!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue))
-        {
-            StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, checkoutSession);
-            updated = true;
-        }
-
-        stripeInvoice ??= await TryResolveStripeInvoiceAsync(payment, checkoutSession, cancellationToken);
-        if (stripeInvoice is not null
-            && (!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue))
-        {
-            StripeCheckoutFinancials.ApplyStripeInvoiceTaxToPayment(payment, stripeInvoice);
-            payment.StripeInvoiceId ??= stripeInvoice.Id;
-            updated = true;
-        }
-
         if (!payment.StripeFee.HasValue && !string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
         {
             var details = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
@@ -386,6 +413,12 @@ public class InvoiceService : IInvoiceService
             return await _stripePaymentDetailsService.GetInvoiceAsync(checkoutSession.InvoiceId, cancellationToken);
         }
 
+        if (checkoutSession?.Invoice is Invoice expandedInvoice && !string.IsNullOrWhiteSpace(expandedInvoice.Id))
+        {
+            return await _stripePaymentDetailsService.GetInvoiceAsync(expandedInvoice.Id, cancellationToken)
+                ?? expandedInvoice;
+        }
+
         if (!string.IsNullOrWhiteSpace(payment.StripeInvoiceId))
         {
             return await _stripePaymentDetailsService.GetInvoiceAsync(payment.StripeInvoiceId, cancellationToken);
@@ -406,6 +439,12 @@ public class InvoiceService : IInvoiceService
         }
 
         var stripeSubscription = await _stripePaymentDetailsService.GetSubscriptionAsync(subscriptionId, cancellationToken);
+        var invoiceId = stripeSubscription?.LatestInvoiceId ?? stripeSubscription?.LatestInvoice?.Id;
+        if (!string.IsNullOrWhiteSpace(invoiceId))
+        {
+            return await _stripePaymentDetailsService.GetInvoiceAsync(invoiceId, cancellationToken);
+        }
+
         return stripeSubscription?.LatestInvoice;
     }
 

@@ -279,22 +279,15 @@ public class CollectedTaxService : ICollectedTaxService
 
 
         _db.CollectedTaxRecords.Add(record);
-
         await _db.SaveChangesAsync(cancellationToken);
 
-
+        await SyncPaymentTaxFromRecordAsync(payment, record, cancellationToken);
 
         _logger.LogInformation(
-
             "Taxes collectées enregistrées pour {PaymentCode} ({LineCount} composante(s))",
-
             payment.PaymentCode,
-
             record.Lines.Count);
-
     }
-
-
 
     public async Task SaveFromStripeInvoiceAsync(
 
@@ -423,22 +416,18 @@ public class CollectedTaxService : ICollectedTaxService
 
 
         _db.CollectedTaxRecords.Add(record);
-
         await _db.SaveChangesAsync(cancellationToken);
 
-
+        if (payment is not null)
+        {
+            await SyncPaymentTaxFromRecordAsync(payment, record, cancellationToken);
+        }
 
         _logger.LogInformation(
-
             "Taxes collectées enregistrées depuis facture Stripe {InvoiceId} ({LineCount} composante(s))",
-
             stripeInvoice.Id,
-
             record.Lines.Count);
-
     }
-
-
 
     public async Task RemoveForFailedPaymentAsync(
 
@@ -791,6 +780,21 @@ public class CollectedTaxService : ICollectedTaxService
     }
 
 
+
+    private async Task SyncPaymentTaxFromRecordAsync(
+        PaymentTransaction payment,
+        CollectedTaxRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (!StripeCheckoutFinancials.NeedsTaxAmount(payment) && payment.AmountSubtotal.HasValue && payment.GrossAmount.HasValue)
+        {
+            return;
+        }
+
+        StripeCheckoutFinancials.ApplyCollectedTaxRecordToPayment(payment, record);
+        payment.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
 
     private static string? GetPaymentIntentIdFromInvoice(Invoice stripeInvoice)
 

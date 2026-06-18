@@ -6,6 +6,14 @@ namespace GiseBsPayGateway.Services;
 
 public static class StripeCheckoutFinancials
 {
+    public static bool NeedsTaxAmount(PaymentTransaction payment) =>
+        payment.TaxAmount is null or 0;
+
+    public static bool NeedsFinancialTaxFields(PaymentTransaction payment) =>
+        NeedsTaxAmount(payment)
+        || !payment.AmountSubtotal.HasValue
+        || !payment.GrossAmount.HasValue;
+
     public static void ApplySessionTaxToPayment(PaymentTransaction payment, Session session)
     {
         long? subtotalCents = session.AmountSubtotal is > 0 ? session.AmountSubtotal : null;
@@ -54,17 +62,17 @@ public static class StripeCheckoutFinancials
             var tax = invoice.TotalTaxes.Sum(x => x.Amount) / 100m;
             if (tax > 0)
             {
-                payment.TaxAmount ??= tax;
+                payment.TaxAmount = tax;
             }
         }
         else if (invoice.Total is > 0 && subtotalCents is > 0 && invoice.Total > subtotalCents)
         {
-            payment.TaxAmount ??= (invoice.Total - subtotalCents.Value) / 100m;
+            payment.TaxAmount = (invoice.Total - subtotalCents.Value) / 100m;
         }
 
         if (invoice.Total is > 0)
         {
-            payment.GrossAmount ??= invoice.Total / 100m;
+            payment.GrossAmount = invoice.Total / 100m;
         }
 
         payment.BillingCountry ??= invoice.CustomerAddress?.Country;
@@ -90,9 +98,30 @@ public static class StripeCheckoutFinancials
         }
     }
 
+    public static void ApplyCollectedTaxRecordToPayment(PaymentTransaction payment, CollectedTaxRecord record)
+    {
+        if (record.AmountSubtotal > 0)
+        {
+            payment.AmountSubtotal ??= record.AmountSubtotal;
+        }
+
+        if (record.TaxAmountTotal > 0)
+        {
+            payment.TaxAmount = record.TaxAmountTotal;
+        }
+
+        if (record.GrossAmount > 0)
+        {
+            payment.GrossAmount ??= record.GrossAmount;
+        }
+
+        payment.BillingCountry ??= record.BillingCountry;
+        payment.BillingState ??= record.BillingState;
+    }
+
     public static bool NeedsFinancialBackfill(PaymentTransaction payment) =>
         string.IsNullOrWhiteSpace(payment.StripePaymentIntentId)
-        || !payment.TaxAmount.HasValue
+        || NeedsTaxAmount(payment)
         || !payment.StripeFee.HasValue
         || !payment.NetAmount.HasValue;
 

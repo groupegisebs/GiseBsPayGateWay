@@ -29,6 +29,7 @@ public class IndexModel : PageModel
         string CustomerCode,
         string ProductCode,
         decimal Amount,
+        decimal? TotalAmount,
         string Currency,
         decimal? TaxAmount,
         decimal? StripeFee,
@@ -77,6 +78,9 @@ public class IndexModel : PageModel
                 x.Customer.CustomerCode,
                 x.Product.ProductCode,
                 x.Amount,
+                x.GrossAmount ?? (x.AmountSubtotal.HasValue && x.TaxAmount.HasValue
+                    ? x.AmountSubtotal.Value + x.TaxAmount.Value
+                    : (decimal?)null),
                 x.Currency,
                 x.TaxAmount,
                 x.StripeFee,

@@ -421,6 +421,26 @@ public class WebhookService : IWebhookService
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+
+        Session? session = null;
+        if (!string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        {
+            session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
+                payment.StripeCheckoutSessionId,
+                cancellationToken);
+        }
+
+        await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(payment, session, null, cancellationToken);
+
+        if (session is not null)
+        {
+            await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, session, cancellationToken);
+            await EnsureGisebsInvoiceAsync(payment, session, cancellationToken);
+        }
+        else
+        {
+            await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken);
+        }
     }
 
     private async Task HandlePaymentFailureAsync(

@@ -14,6 +14,35 @@ namespace GiseBsPayGateway.Tests.Services;
 public class CollectedTaxServiceTests
 {
     [Fact]
+    public async Task SaveFromCheckoutCompletedAsync_SyncsTaxAmountToPayment()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(SaveFromCheckoutCompletedAsync_SyncsTaxAmountToPayment));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var (product, plan) = await TestDbContextFactory.SeedProductPlanAsync(db, app);
+        var payment = await SeedSucceededPaymentAsync(db, app, product, plan);
+        payment.TaxAmount = null;
+        payment.AmountSubtotal = null;
+        payment.GrossAmount = null;
+        await db.SaveChangesAsync();
+
+        var stripeDetails = new Mock<IStripePaymentDetailsService>();
+        stripeDetails.Setup(s => s.GetPaymentIntentStatusAsync("pi_paid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("succeeded");
+        stripeDetails.Setup(s => s.GetStripeTaxTransactionIdAsync("pi_paid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        var session = CreatePaidSession(payment.PaymentCode);
+        var sut = CreateService(db, stripeDetails);
+
+        await sut.SaveFromCheckoutCompletedAsync(payment, session);
+
+        var updated = await db.PaymentTransactions.FindAsync(payment.Id);
+        Assert.Equal(14.98m, updated!.TaxAmount);
+        Assert.Equal(100m, updated.AmountSubtotal);
+        Assert.Equal(114.98m, updated.GrossAmount);
+    }
+
+    [Fact]
     public async Task SaveFromCheckoutCompletedAsync_SessionPaidAndIntentSucceeded_PersistsTaxRecord()
     {
         await using var db = TestDbContextFactory.Create(nameof(SaveFromCheckoutCompletedAsync_SessionPaidAndIntentSucceeded_PersistsTaxRecord));
