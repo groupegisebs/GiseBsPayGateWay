@@ -3,6 +3,7 @@ using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace GiseBsPayGateway.Tests.Infrastructure;
 
@@ -12,6 +13,7 @@ public static class TestDbContextFactory
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         var db = new ApplicationDbContext(options);

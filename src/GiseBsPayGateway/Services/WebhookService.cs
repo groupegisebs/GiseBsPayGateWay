@@ -112,6 +112,7 @@ public class WebhookService : IWebhookService
                 case EventTypes.InvoicePaymentFailed:
                     await HandleInvoiceFailedAsync(stripeEvent, cancellationToken);
                     break;
+                case EventTypes.CustomerSubscriptionCreated:
                 case EventTypes.CustomerSubscriptionUpdated:
                 case EventTypes.CustomerSubscriptionDeleted:
                     await HandleSubscriptionChangedAsync(stripeEvent, cancellationToken);
@@ -166,10 +167,8 @@ public class WebhookService : IWebhookService
             return;
         }
 
-        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
-            ?? session;
-
-        if (!await IsPaymentIntentConfirmedAsync(resolvedSession.PaymentIntentId, cancellationToken))
+        var resolvedSession = await ResolveCheckoutSessionForFinalizationAsync(session, cancellationToken);
+        if (!await CanFinalizePaidCheckoutSessionAsync(resolvedSession, cancellationToken))
         {
             await _db.SaveChangesAsync(cancellationToken);
             return;
@@ -193,13 +192,11 @@ public class WebhookService : IWebhookService
             return false;
         }
 
-        if (!await IsPaymentIntentConfirmedAsync(session.PaymentIntentId, cancellationToken))
+        var resolvedSession = await ResolveCheckoutSessionForFinalizationAsync(session, cancellationToken);
+        if (!await CanFinalizePaidCheckoutSessionAsync(resolvedSession, cancellationToken))
         {
             return false;
         }
-
-        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
-            ?? session;
 
         await FinalizeSuccessfulCheckoutAsync(payment, resolvedSession, cancellationToken);
         return true;
@@ -225,10 +222,8 @@ public class WebhookService : IWebhookService
             return;
         }
 
-        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
-            ?? session;
-
-        if (!await IsPaymentIntentConfirmedAsync(resolvedSession.PaymentIntentId, cancellationToken))
+        var resolvedSession = await ResolveCheckoutSessionForFinalizationAsync(session, cancellationToken);
+        if (!await CanFinalizePaidCheckoutSessionAsync(resolvedSession, cancellationToken))
         {
             return;
         }
@@ -431,8 +426,15 @@ public class WebhookService : IWebhookService
 
         if (subscription is null)
         {
+            await TryFinalizeInitialSubscriptionPaymentAsync(subscriptionId, invoice, cancellationToken);
+            subscription = await _db.Subscriptions
+                .FirstOrDefaultAsync(x => x.StripeSubscriptionId == subscriptionId, cancellationToken);
+
             await _invoiceService.SaveFromStripeInvoiceAsync(invoice, InvoiceStatus.Paid, cancellationToken);
-            await TrySaveCollectedTaxFromInvoiceAsync(invoice, null, cancellationToken);
+            var linkedPayment = subscription is not null
+                ? await _db.PaymentTransactions.FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken)
+                : null;
+            await TrySaveCollectedTaxFromInvoiceAsync(invoice, linkedPayment, cancellationToken);
             return;
         }
 
@@ -514,6 +516,11 @@ public class WebhookService : IWebhookService
 
         if (subscription is null)
         {
+            if (stripeEvent.Type is EventTypes.CustomerSubscriptionCreated or EventTypes.CustomerSubscriptionUpdated)
+            {
+                await TryFinalizeFromStripeSubscriptionAsync(stripeSubscription, cancellationToken);
+            }
+
             return;
         }
 
@@ -606,13 +613,170 @@ public class WebhookService : IWebhookService
         return null;
     }
 
+    private async Task<Session> ResolveCheckoutSessionForFinalizationAsync(
+        Session session,
+        CancellationToken cancellationToken)
+    {
+        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
+            ?? session;
+
+        if (string.IsNullOrWhiteSpace(resolvedSession.PaymentIntentId)
+            && !string.IsNullOrWhiteSpace(resolvedSession.SubscriptionId))
+        {
+            resolvedSession.PaymentIntentId = await _stripePaymentDetailsService.GetSubscriptionPaymentIntentIdAsync(
+                resolvedSession.SubscriptionId,
+                cancellationToken);
+        }
+
+        return resolvedSession;
+    }
+
+    private async Task<bool> CanFinalizePaidCheckoutSessionAsync(
+        Session session,
+        CancellationToken cancellationToken)
+    {
+        if (!StripePaymentVerification.IsCheckoutSessionPaymentConfirmed(session))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.SubscriptionId))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.PaymentIntentId))
+        {
+            return await IsPaymentIntentConfirmedAsync(session.PaymentIntentId, cancellationToken);
+        }
+
+        _logger.LogWarning(
+            "Session {SessionId} payée sans PaymentIntent ni abonnement; confirmation impossible",
+            session.Id);
+        return false;
+    }
+
+    private async Task TryFinalizeFromStripeSubscriptionAsync(
+        StripeSubscription stripeSubscription,
+        CancellationToken cancellationToken)
+    {
+        if (!IsActiveSubscriptionStatus(stripeSubscription.Status))
+        {
+            return;
+        }
+
+        if (!stripeSubscription.Metadata.TryGetValue("payment_code", out var paymentCode))
+        {
+            return;
+        }
+
+        var payment = await _db.PaymentTransactions
+            .Include(x => x.PricingPlan)
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode && x.Status == PaymentStatus.Pending, cancellationToken);
+
+        if (payment is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        {
+            var session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
+                payment.StripeCheckoutSessionId,
+                cancellationToken);
+
+            if (session is not null && await TryCompleteFromCheckoutSessionAsync(payment, session, cancellationToken))
+            {
+                return;
+            }
+        }
+
+        var paymentIntentId = await _stripePaymentDetailsService.GetSubscriptionPaymentIntentIdAsync(
+            stripeSubscription.Id,
+            cancellationToken);
+
+        var syntheticSession = new Session
+        {
+            Id = payment.StripeCheckoutSessionId ?? string.Empty,
+            SubscriptionId = stripeSubscription.Id,
+            PaymentStatus = "paid",
+            PaymentIntentId = paymentIntentId
+        };
+
+        await FinalizeSuccessfulCheckoutAsync(payment, syntheticSession, cancellationToken);
+    }
+
+    private async Task TryFinalizeInitialSubscriptionPaymentAsync(
+        string subscriptionId,
+        Invoice invoice,
+        CancellationToken cancellationToken)
+    {
+        if (!StripePaymentVerification.IsInvoicePaid(invoice))
+        {
+            return;
+        }
+
+        string? paymentCode = invoice.Metadata.TryGetValue("payment_code", out var invoiceCode) ? invoiceCode : null;
+        StripeSubscription? stripeSubscription = null;
+
+        if (paymentCode is null)
+        {
+            stripeSubscription = await _stripePaymentDetailsService.GetSubscriptionAsync(subscriptionId, cancellationToken);
+            if (stripeSubscription?.Metadata.TryGetValue("payment_code", out var subscriptionCode) == true)
+            {
+                paymentCode = subscriptionCode;
+            }
+        }
+
+        if (paymentCode is null)
+        {
+            return;
+        }
+
+        var payment = await _db.PaymentTransactions
+            .Include(x => x.PricingPlan)
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode && x.Status == PaymentStatus.Pending, cancellationToken);
+
+        if (payment is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        {
+            var session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
+                payment.StripeCheckoutSessionId,
+                cancellationToken);
+
+            if (session is not null && await TryCompleteFromCheckoutSessionAsync(payment, session, cancellationToken))
+            {
+                return;
+            }
+        }
+
+        stripeSubscription ??= await _stripePaymentDetailsService.GetSubscriptionAsync(subscriptionId, cancellationToken);
+        if (stripeSubscription is not null && IsActiveSubscriptionStatus(stripeSubscription.Status))
+        {
+            await TryFinalizeFromStripeSubscriptionAsync(stripeSubscription, cancellationToken);
+        }
+    }
+
+    private static bool IsActiveSubscriptionStatus(string? status) =>
+        string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "trialing", StringComparison.OrdinalIgnoreCase);
+
     private async Task<bool> IsPaymentIntentConfirmedAsync(
         string? paymentIntentId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(paymentIntentId))
         {
-            _logger.LogWarning("Session sans PaymentIntent; confirmation de paiement impossible");
             return false;
         }
 

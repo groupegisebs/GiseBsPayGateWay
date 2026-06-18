@@ -27,6 +27,14 @@ public interface IStripePaymentDetailsService
     Task<string?> GetPaymentIntentStatusAsync(
         string? paymentIntentId,
         CancellationToken cancellationToken = default);
+
+    Task<string?> GetSubscriptionPaymentIntentIdAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken = default);
+
+    Task<Subscription?> GetSubscriptionAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken = default);
 }
 
 public class StripePaymentDetailsService : IStripePaymentDetailsService
@@ -201,5 +209,69 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
             _logger.LogWarning(ex, "Impossible de récupérer le statut du PaymentIntent {PaymentIntentId}", paymentIntentId);
             return null;
         }
+    }
+
+    public async Task<string?> GetSubscriptionPaymentIntentIdAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken = default)
+    {
+        var subscription = await GetSubscriptionAsync(subscriptionId, cancellationToken);
+        if (subscription is null)
+        {
+            return null;
+        }
+
+        return GetPaymentIntentIdFromInvoice(subscription.LatestInvoice)
+            ?? subscription.LatestInvoice?.Payments?.Data?.FirstOrDefault()?.Payment?.PaymentIntentId;
+    }
+
+    public async Task<Subscription?> GetSubscriptionAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            return null;
+        }
+
+        try
+        {
+            var settings = await _stripeSettings.GetActiveAsync(cancellationToken);
+            if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
+            {
+                return null;
+            }
+
+            StripeConfiguration.ApiKey = settings.SecretKey;
+
+            return await new SubscriptionService().GetAsync(
+                subscriptionId,
+                new SubscriptionGetOptions
+                {
+                    Expand = ["latest_invoice.payments.data.payment.payment_intent"]
+                },
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de récupérer l'abonnement Stripe {SubscriptionId}", subscriptionId);
+            return null;
+        }
+    }
+
+    private static string? GetPaymentIntentIdFromInvoice(Invoice? invoice)
+    {
+        if (invoice is null)
+        {
+            return null;
+        }
+
+        var payment = invoice.Payments?.Data?.FirstOrDefault();
+        if (payment?.Payment?.PaymentIntentId is { } paymentIntentId)
+        {
+            return paymentIntentId;
+        }
+
+        return payment?.Payment?.PaymentIntent?.Id;
     }
 }
