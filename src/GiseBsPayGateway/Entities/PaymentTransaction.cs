@@ -21,6 +21,15 @@ public class PaymentTransaction : BaseEntity
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "eur";
 
+    /// <summary>Catalog amount before conversion to settlement currency (CAD).</summary>
+    public decimal? OriginalAmount { get; set; }
+
+    /// <summary>Catalog currency before conversion (e.g. usd).</summary>
+    public string? OriginalCurrency { get; set; }
+
+    /// <summary>BoC rate used: 1 unit of OriginalCurrency = ExchangeRate CAD.</summary>
+    public decimal? ExchangeRate { get; set; }
+
     public string? StripeCheckoutSessionId { get; set; }
     public string? StripePaymentIntentId { get; set; }
     public string? StripeInvoiceId { get; set; }

@@ -75,6 +75,9 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.PaymentCode).HasMaxLength(50);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.OriginalAmount).HasPrecision(18, 2);
+            e.Property(x => x.OriginalCurrency).HasMaxLength(3);
+            e.Property(x => x.ExchangeRate).HasPrecision(18, 6);
             e.Property(x => x.AmountSubtotal).HasPrecision(18, 2);
             e.Property(x => x.TaxAmount).HasPrecision(18, 2);
             e.Property(x => x.GrossAmount).HasPrecision(18, 2);

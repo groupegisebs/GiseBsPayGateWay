@@ -73,6 +73,10 @@ public class PaymentServiceTests
         Assert.Equal("Pending", result.Status);
         Assert.Single(db.Customers);
         Assert.Single(db.PaymentTransactions);
+
+        var payment = db.PaymentTransactions.Single();
+        Assert.Equal(24m, payment.Amount);
+        Assert.Equal("USD", payment.Currency);
     }
 
     [Fact]
@@ -284,7 +288,9 @@ public class PaymentServiceTests
         Assert.Equal("ON", result.BillingState);
     }
 
-    private static PaymentService CreatePaymentService(ApplicationDbContext db, Mock<IStripeService> stripe)
+    private static PaymentService CreatePaymentService(
+        ApplicationDbContext db,
+        Mock<IStripeService> stripe)
     {
         var settings = new Mock<IStripeSettingsProvider>();
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))

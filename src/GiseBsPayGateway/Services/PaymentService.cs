@@ -71,6 +71,7 @@ public class PaymentService : IPaymentService
         }
 
         var paymentCode = $"PAY-{app.AppCode.ToUpperInvariant()}-{Guid.NewGuid():N}"[..32];
+
         var payment = new PaymentTransaction
         {
             ClientApplicationId = app.Id,
@@ -223,7 +224,10 @@ public class PaymentService : IPaymentService
             collectedTax?.BillingCountry ?? payment.BillingCountry,
             collectedTax?.BillingState ?? payment.BillingState,
             collectedTax is not null ? CollectedTaxMapper.ToBillingAddressDto(collectedTax) : null,
-            collectedTax is not null ? CollectedTaxMapper.ToLineDtos(collectedTax.Lines) : null);
+            collectedTax is not null ? CollectedTaxMapper.ToLineDtos(collectedTax.Lines) : null,
+            payment.OriginalAmount,
+            payment.OriginalCurrency,
+            payment.ExchangeRate);
 
     private static SubscriptionResponse MapSubscription(Subscription subscription) =>
         new(
