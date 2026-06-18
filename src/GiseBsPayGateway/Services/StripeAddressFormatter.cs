@@ -22,6 +22,47 @@ public static class StripeAddressFormatter
         "WV", "WI", "WY", "AS", "GU", "MP", "PR", "VI", "AA", "AE", "AP"
     };
 
+    private static readonly Dictionary<string, string> CanadianProvinceToCode = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Alberta"] = "AB",
+        ["British Columbia"] = "BC",
+        ["Colombie-Britannique"] = "BC",
+        ["Manitoba"] = "MB",
+        ["New Brunswick"] = "NB",
+        ["Nouveau-Brunswick"] = "NB",
+        ["Newfoundland and Labrador"] = "NL",
+        ["Terre-Neuve-et-Labrador"] = "NL",
+        ["Nova Scotia"] = "NS",
+        ["Nouvelle-Écosse"] = "NS",
+        ["Northwest Territories"] = "NT",
+        ["Territoires du Nord-Ouest"] = "NT",
+        ["Nunavut"] = "NU",
+        ["Ontario"] = "ON",
+        ["Prince Edward Island"] = "PE",
+        ["Île-du-Prince-Édouard"] = "PE",
+        ["Quebec"] = "QC",
+        ["Québec"] = "QC",
+        ["Saskatchewan"] = "SK",
+        ["Yukon"] = "YT",
+    };
+
+    private static readonly Dictionary<string, string> UsStateToCode = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Alabama"] = "AL", ["Alaska"] = "AK", ["Arizona"] = "AZ", ["Arkansas"] = "AR",
+        ["California"] = "CA", ["Colorado"] = "CO", ["Connecticut"] = "CT", ["Delaware"] = "DE",
+        ["District of Columbia"] = "DC", ["Florida"] = "FL", ["Georgia"] = "GA", ["Hawaii"] = "HI",
+        ["Idaho"] = "ID", ["Illinois"] = "IL", ["Indiana"] = "IN", ["Iowa"] = "IA",
+        ["Kansas"] = "KS", ["Kentucky"] = "KY", ["Louisiana"] = "LA", ["Maine"] = "ME",
+        ["Maryland"] = "MD", ["Massachusetts"] = "MA", ["Michigan"] = "MI", ["Minnesota"] = "MN",
+        ["Mississippi"] = "MS", ["Missouri"] = "MO", ["Montana"] = "MT", ["Nebraska"] = "NE",
+        ["Nevada"] = "NV", ["New Hampshire"] = "NH", ["New Jersey"] = "NJ", ["New Mexico"] = "NM",
+        ["New York"] = "NY", ["North Carolina"] = "NC", ["North Dakota"] = "ND", ["Ohio"] = "OH",
+        ["Oklahoma"] = "OK", ["Oregon"] = "OR", ["Pennsylvania"] = "PA", ["Rhode Island"] = "RI",
+        ["South Carolina"] = "SC", ["South Dakota"] = "SD", ["Tennessee"] = "TN", ["Texas"] = "TX",
+        ["Utah"] = "UT", ["Vermont"] = "VT", ["Virginia"] = "VA", ["Washington"] = "WA",
+        ["West Virginia"] = "WV", ["Wisconsin"] = "WI", ["Wyoming"] = "WY",
+    };
+
     private static readonly Regex CanadianPostalRegex = new(
         @"^[A-Z]\d[A-Z]\s?\d[A-Z]\d$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -47,12 +88,23 @@ public static class StripeAddressFormatter
         if (string.IsNullOrWhiteSpace(state))
             return null;
 
-        var code = state.Trim().ToUpperInvariant();
+        var trimmed = state.Trim();
+        if (trimmed.Length == 2)
+        {
+            var code = trimmed.ToUpperInvariant();
+            return country switch
+            {
+                "CA" when CanadianProvinceCodes.Contains(code) => code,
+                "US" when UsStateCodes.Contains(code) => code,
+                _ => trimmed
+            };
+        }
+
         return country switch
         {
-            "CA" when CanadianProvinceCodes.Contains(code) => code,
-            "US" when UsStateCodes.Contains(code) => code,
-            _ => state.Trim()
+            "CA" when CanadianProvinceToCode.TryGetValue(trimmed, out var provinceCode) => provinceCode,
+            "US" when UsStateToCode.TryGetValue(trimmed, out var stateCode) => stateCode,
+            _ => trimmed
         };
     }
 

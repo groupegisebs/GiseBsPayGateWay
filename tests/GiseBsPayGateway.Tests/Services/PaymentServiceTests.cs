@@ -151,6 +151,42 @@ public class PaymentServiceTests
     }
 
     [Fact]
+    public async Task CreateCheckoutSession_NormaliseProvinceOntario_TransmetOnAuServiceStripe()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(CreateCheckoutSession_NormaliseProvinceOntario_TransmetOnAuServiceStripe));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        await TestDbContextFactory.SeedProductPlanAsync(db, app);
+
+        var billingAddress = new BillingAddressDto(
+            "100 Queen St W",
+            null,
+            "Toronto",
+            "Ontario",
+            "M5H 2N2",
+            "CA");
+        var expectedAddress = billingAddress with { State = "ON" };
+
+        var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.CreateCheckoutSessionAsync(
+                It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+                expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
+
+        var sut = CreatePaymentService(db, stripe);
+        var request = CreateCheckoutRequest() with { BillingAddress = billingAddress };
+
+        await sut.CreateCheckoutSessionAsync(app, request);
+
+        var payment = db.PaymentTransactions.Single();
+        Assert.Equal("ON", payment.BillingState);
+        stripe.Verify(s => s.CreateCheckoutSessionAsync(
+            It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
+            expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateCheckoutSession_ClientExistant_MetAJourEmail()
     {
         await using var db = TestDbContextFactory.Create(nameof(CreateCheckoutSession_ClientExistant_MetAJourEmail));

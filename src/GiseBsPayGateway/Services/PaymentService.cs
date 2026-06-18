@@ -89,10 +89,13 @@ public class PaymentService : IPaymentService
         _db.PaymentTransactions.Add(payment);
         await _db.SaveChangesAsync(cancellationToken);
 
-        if (request.BillingAddress is { } billingAddress)
+        BillingAddressDto? sessionBillingAddress = request.BillingAddress;
+        if (sessionBillingAddress is { } billingAddress)
         {
-            payment.BillingCountry = billingAddress.Country.Trim().ToUpperInvariant();
-            payment.BillingState = billingAddress.State?.Trim();
+            var formattedBilling = StripeAddressFormatter.Format(billingAddress);
+            payment.BillingCountry = formattedBilling.Country;
+            payment.BillingState = formattedBilling.State;
+            sessionBillingAddress = formattedBilling;
         }
 
         var (sessionId, url, clientSecret) = await _stripeService.CreateCheckoutSessionAsync(
@@ -103,7 +106,7 @@ public class PaymentService : IPaymentService
             request.CancelUrl,
             request.TrialDays,
             request.Embedded,
-            request.BillingAddress,
+            sessionBillingAddress,
             request.CustomerUpdate,
             cancellationToken);
 
