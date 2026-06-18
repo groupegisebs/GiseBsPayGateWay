@@ -1,5 +1,6 @@
 using Stripe;
 using Stripe.Checkout;
+using StripeInvoiceService = Stripe.InvoiceService;
 using Stripe.Tax;
 
 namespace GiseBsPayGateway.Services;
@@ -34,6 +35,10 @@ public interface IStripePaymentDetailsService
 
     Task<Subscription?> GetSubscriptionAsync(
         string subscriptionId,
+        CancellationToken cancellationToken = default);
+
+    Task<Invoice?> GetInvoiceAsync(
+        string invoiceId,
         CancellationToken cancellationToken = default);
 }
 
@@ -255,6 +260,40 @@ public class StripePaymentDetailsService : IStripePaymentDetailsService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Impossible de récupérer l'abonnement Stripe {SubscriptionId}", subscriptionId);
+            return null;
+        }
+    }
+
+    public async Task<Invoice?> GetInvoiceAsync(
+        string invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(invoiceId))
+        {
+            return null;
+        }
+
+        try
+        {
+            var settings = await _stripeSettings.GetActiveAsync(cancellationToken);
+            if (settings is null || string.IsNullOrWhiteSpace(settings.SecretKey))
+            {
+                return null;
+            }
+
+            StripeConfiguration.ApiKey = settings.SecretKey;
+
+            return await new StripeInvoiceService().GetAsync(
+                invoiceId,
+                new InvoiceGetOptions
+                {
+                    Expand = ["payments.data.payment.payment_intent"]
+                },
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Impossible de récupérer la facture Stripe {InvoiceId}", invoiceId);
             return null;
         }
     }

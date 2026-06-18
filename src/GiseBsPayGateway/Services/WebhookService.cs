@@ -184,6 +184,8 @@ public class WebhookService : IWebhookService
     {
         if (payment.Status == PaymentStatus.Succeeded)
         {
+            var resolvedSucceededSession = await ResolveCheckoutSessionForFinalizationAsync(session, cancellationToken);
+            await FinalizeSuccessfulCheckoutAsync(payment, resolvedSucceededSession, cancellationToken);
             return true;
         }
 
@@ -300,9 +302,13 @@ public class WebhookService : IWebhookService
         Session session,
         CancellationToken cancellationToken)
     {
+        session = await EnsureSessionPaymentIntentAsync(session, cancellationToken);
+
         if (payment.Status == PaymentStatus.Succeeded)
         {
+            await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(payment, session, null, cancellationToken);
             await _collectedTaxService.SaveFromCheckoutCompletedAsync(payment, session, cancellationToken);
+            await EnsureGisebsInvoiceAsync(payment, session, cancellationToken);
             return;
         }
 
@@ -358,7 +364,35 @@ public class WebhookService : IWebhookService
             throw;
         }
 
+        await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(payment, session, null, cancellationToken);
+        await EnsureGisebsInvoiceAsync(payment, session, cancellationToken);
+    }
+
+    private async Task EnsureGisebsInvoiceAsync(
+        Entities.PaymentTransaction payment,
+        Session session,
+        CancellationToken cancellationToken)
+    {
         await _invoiceService.SaveFromCheckoutCompletedAsync(session, payment, cancellationToken);
+
+        if (payment.PricingPlan.BillingInterval != BillingInterval.OneTime)
+        {
+            await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken);
+        }
+    }
+
+    private async Task<Session> EnsureSessionPaymentIntentAsync(Session session, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.PaymentIntentId)
+            || string.IsNullOrWhiteSpace(session.SubscriptionId))
+        {
+            return session;
+        }
+
+        session.PaymentIntentId = await _stripePaymentDetailsService.GetSubscriptionPaymentIntentIdAsync(
+            session.SubscriptionId,
+            cancellationToken);
+        return session;
     }
 
     private async Task FinalizeSuccessfulPaymentIntentAsync(
@@ -434,6 +468,18 @@ public class WebhookService : IWebhookService
             var linkedPayment = subscription is not null
                 ? await _db.PaymentTransactions.FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken)
                 : null;
+            if (linkedPayment is null
+                && invoice.Metadata.TryGetValue("payment_code", out var paymentCode))
+            {
+                linkedPayment = await _db.PaymentTransactions
+                    .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
+            }
+
+            if (linkedPayment is not null)
+            {
+                await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(linkedPayment, null, invoice, cancellationToken);
+            }
+
             await TrySaveCollectedTaxFromInvoiceAsync(invoice, linkedPayment, cancellationToken);
             return;
         }
@@ -447,6 +493,11 @@ public class WebhookService : IWebhookService
 
         var payment = await _db.PaymentTransactions
             .FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken);
+        if (payment is not null)
+        {
+            await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(payment, null, invoice, cancellationToken);
+        }
+
         await TrySaveCollectedTaxFromInvoiceAsync(invoice, payment, cancellationToken);
     }
 

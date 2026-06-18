@@ -54,6 +54,26 @@ public class StripeCheckoutFinancialsTests
     }
 
     [Fact]
+    public void ApplyStripeInvoiceTaxToPayment_StoresSubtotalTaxAndGross()
+    {
+        var payment = new PaymentTransaction { Amount = 5m };
+        var invoice = new Invoice
+        {
+            TotalExcludingTax = 500,
+            Total = 565,
+            CustomerAddress = new Address { Country = "CA", State = "ON" }
+        };
+
+        StripeCheckoutFinancials.ApplyStripeInvoiceTaxToPayment(payment, invoice);
+
+        Assert.Equal(5m, payment.AmountSubtotal);
+        Assert.Equal(0.65m, payment.TaxAmount);
+        Assert.Equal(5.65m, payment.GrossAmount);
+        Assert.Equal("CA", payment.BillingCountry);
+        Assert.Equal("ON", payment.BillingState);
+    }
+
+    [Fact]
     public void ApplyBalanceTransactionToPayment_StoresFeeNetAndBalanceTransactionId()
     {
         var payment = new PaymentTransaction { Amount = 100m };

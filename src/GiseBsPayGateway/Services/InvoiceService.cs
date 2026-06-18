@@ -14,6 +14,11 @@ public interface IInvoiceService
     Task SaveFromStripeInvoiceAsync(Invoice stripeInvoice, InvoiceStatus status, CancellationToken cancellationToken = default);
     Task<PaymentInvoice?> GetByPaymentCodeAsync(Guid clientApplicationId, string paymentCode, CancellationToken cancellationToken = default);
     Task<PaymentInvoice?> EnsureInvoiceForPaymentAsync(PaymentTransaction payment, CancellationToken cancellationToken = default);
+    Task EnrichSuccessfulPaymentFinancialsAsync(
+        PaymentTransaction payment,
+        Session? checkoutSession = null,
+        Invoice? stripeInvoice = null,
+        CancellationToken cancellationToken = default);
     Task<(byte[] Content, string FileName)?> GetPdfAsync(PaymentInvoice invoice, CancellationToken cancellationToken = default);
 }
 
@@ -116,6 +121,7 @@ public class InvoiceService : IInvoiceService
         {
             context.Payment.StripeInvoiceId = stripeInvoice.Id;
             context.Payment.UpdatedAt = DateTime.UtcNow;
+            await EnrichSuccessfulPaymentFinancialsAsync(context.Payment, null, stripeInvoice, cancellationToken);
         }
 
         _db.PaymentInvoices.Add(invoice);
@@ -284,24 +290,77 @@ public class InvoiceService : IInvoiceService
         };
     }
 
-    private async Task BackfillPaymentFinancialsAsync(PaymentTransaction payment, CancellationToken cancellationToken)
+    public async Task EnrichSuccessfulPaymentFinancialsAsync(
+        PaymentTransaction payment,
+        Session? checkoutSession = null,
+        Invoice? stripeInvoice = null,
+        CancellationToken cancellationToken = default)
     {
+        if (payment.Status != PaymentStatus.Succeeded)
+        {
+            return;
+        }
+
+        await EnsurePaymentGraphLoadedAsync(payment, cancellationToken);
+
         var updated = false;
 
-        if ((!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue) &&
-            !string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId))
+        checkoutSession ??= !string.IsNullOrWhiteSpace(payment.StripeCheckoutSessionId)
+            ? await _stripePaymentDetailsService.GetCheckoutSessionAsync(payment.StripeCheckoutSessionId, cancellationToken)
+            : null;
+
+        if (string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
         {
-            var session = await _stripePaymentDetailsService.GetCheckoutSessionAsync(
-                payment.StripeCheckoutSessionId,
-                cancellationToken);
-            if (session is not null)
+            var paymentIntentId = checkoutSession?.PaymentIntentId;
+            if (string.IsNullOrWhiteSpace(paymentIntentId)
+                && !string.IsNullOrWhiteSpace(checkoutSession?.SubscriptionId))
             {
-                StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+                paymentIntentId = await _stripePaymentDetailsService.GetSubscriptionPaymentIntentIdAsync(
+                    checkoutSession.SubscriptionId,
+                    cancellationToken);
+            }
+
+            if (string.IsNullOrWhiteSpace(paymentIntentId) && payment.SubscriptionId.HasValue)
+            {
+                var subscription = await _db.Subscriptions.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == payment.SubscriptionId.Value, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(subscription?.StripeSubscriptionId))
+                {
+                    paymentIntentId = await _stripePaymentDetailsService.GetSubscriptionPaymentIntentIdAsync(
+                        subscription.StripeSubscriptionId,
+                        cancellationToken);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(paymentIntentId) && stripeInvoice is not null)
+            {
+                paymentIntentId = GetPaymentIntentIdFromInvoice(stripeInvoice);
+            }
+
+            if (!string.IsNullOrWhiteSpace(paymentIntentId))
+            {
+                payment.StripePaymentIntentId = paymentIntentId;
                 updated = true;
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(payment.StripePaymentIntentId) && !payment.StripeFee.HasValue)
+        if (checkoutSession is not null
+            && (!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue))
+        {
+            StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, checkoutSession);
+            updated = true;
+        }
+
+        stripeInvoice ??= await TryResolveStripeInvoiceAsync(payment, checkoutSession, cancellationToken);
+        if (stripeInvoice is not null
+            && (!payment.TaxAmount.HasValue || !payment.AmountSubtotal.HasValue || !payment.GrossAmount.HasValue))
+        {
+            StripeCheckoutFinancials.ApplyStripeInvoiceTaxToPayment(payment, stripeInvoice);
+            payment.StripeInvoiceId ??= stripeInvoice.Id;
+            updated = true;
+        }
+
+        if (!payment.StripeFee.HasValue && !string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
         {
             var details = await _stripePaymentDetailsService.GetBalanceTransactionDetailsAsync(
                 payment.StripePaymentIntentId,
@@ -315,6 +374,44 @@ public class InvoiceService : IInvoiceService
             payment.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private async Task<Invoice?> TryResolveStripeInvoiceAsync(
+        PaymentTransaction payment,
+        Session? checkoutSession,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(checkoutSession?.InvoiceId))
+        {
+            return await _stripePaymentDetailsService.GetInvoiceAsync(checkoutSession.InvoiceId, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(payment.StripeInvoiceId))
+        {
+            return await _stripePaymentDetailsService.GetInvoiceAsync(payment.StripeInvoiceId, cancellationToken);
+        }
+
+        var subscriptionId = checkoutSession?.SubscriptionId;
+        if (string.IsNullOrWhiteSpace(subscriptionId) && payment.SubscriptionId.HasValue)
+        {
+            subscriptionId = await _db.Subscriptions.AsNoTracking()
+                .Where(x => x.Id == payment.SubscriptionId.Value)
+                .Select(x => x.StripeSubscriptionId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            return null;
+        }
+
+        var stripeSubscription = await _stripePaymentDetailsService.GetSubscriptionAsync(subscriptionId, cancellationToken);
+        return stripeSubscription?.LatestInvoice;
+    }
+
+    private async Task BackfillPaymentFinancialsAsync(PaymentTransaction payment, CancellationToken cancellationToken)
+    {
+        await EnrichSuccessfulPaymentFinancialsAsync(payment, cancellationToken: cancellationToken);
     }
 
     private async Task<PaymentInvoice> BuildInvoiceFromContextAsync(InvoiceContext context, CancellationToken cancellationToken)

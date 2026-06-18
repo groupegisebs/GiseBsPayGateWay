@@ -1,4 +1,5 @@
 using GiseBsPayGateway.Entities;
+using Stripe;
 using Stripe.Checkout;
 
 namespace GiseBsPayGateway.Services;
@@ -38,6 +39,38 @@ public static class StripeCheckoutFinancials
         payment.BillingState ??= address?.State;
     }
 
+    public static void ApplyStripeInvoiceTaxToPayment(PaymentTransaction payment, Invoice invoice)
+    {
+        long? subtotalCents = invoice.TotalExcludingTax is > 0 ? invoice.TotalExcludingTax : null;
+        subtotalCents ??= invoice.Subtotal is > 0 ? invoice.Subtotal : null;
+
+        if (subtotalCents is > 0)
+        {
+            payment.AmountSubtotal ??= subtotalCents.Value / 100m;
+        }
+
+        if (invoice.TotalTaxes is { Count: > 0 })
+        {
+            var tax = invoice.TotalTaxes.Sum(x => x.Amount) / 100m;
+            if (tax > 0)
+            {
+                payment.TaxAmount ??= tax;
+            }
+        }
+        else if (invoice.Total is > 0 && subtotalCents is > 0 && invoice.Total > subtotalCents)
+        {
+            payment.TaxAmount ??= (invoice.Total - subtotalCents.Value) / 100m;
+        }
+
+        if (invoice.Total is > 0)
+        {
+            payment.GrossAmount ??= invoice.Total / 100m;
+        }
+
+        payment.BillingCountry ??= invoice.CustomerAddress?.Country;
+        payment.BillingState ??= invoice.CustomerAddress?.State;
+    }
+
     public static void ApplyBalanceTransactionToPayment(
         PaymentTransaction payment,
         StripeBalanceTransactionDetails? details)
@@ -47,15 +80,21 @@ public static class StripeCheckoutFinancials
             return;
         }
 
-        payment.StripeFee = details.Fee;
-        payment.NetAmount = details.Net;
-        payment.StripeBalanceTransactionId = details.BalanceTransactionId;
+        payment.StripeFee ??= details.Fee;
+        payment.NetAmount ??= details.Net;
+        payment.StripeBalanceTransactionId ??= details.BalanceTransactionId;
 
         if (details.GrossAmount != payment.Amount)
         {
-            payment.GrossAmount = details.GrossAmount;
+            payment.GrossAmount ??= details.GrossAmount;
         }
     }
+
+    public static bool NeedsFinancialBackfill(PaymentTransaction payment) =>
+        string.IsNullOrWhiteSpace(payment.StripePaymentIntentId)
+        || !payment.TaxAmount.HasValue
+        || !payment.StripeFee.HasValue
+        || !payment.NetAmount.HasValue;
 
     public static void CopyPaymentFinancialsToInvoice(PaymentInvoice invoice, PaymentTransaction payment)
     {
