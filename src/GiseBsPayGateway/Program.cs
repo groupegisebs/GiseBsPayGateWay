@@ -35,8 +35,6 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<StripeSecretsOptions>(builder.Configuration.GetSection(StripeSecretsOptions.SectionName));
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKeyOptions.SectionName));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
-builder.Services.Configure<PendingPaymentExpiryOptions>(
-    builder.Configuration.GetSection(PendingPaymentExpiryOptions.SectionName));
 
 if (builder.Environment.IsEnvironment("Testing"))
 {
@@ -133,12 +131,6 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();
 builder.Services.AddScoped<ICollectedTaxService, CollectedTaxService>();
-builder.Services.AddScoped<IPendingPaymentExpiryService, PendingPaymentExpiryService>();
-
-if (!builder.Environment.IsEnvironment("Testing"))
-{
-    builder.Services.AddHostedService<PendingPaymentExpiryHostedService>();
-}
 
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();
