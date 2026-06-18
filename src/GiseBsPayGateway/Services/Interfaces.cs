@@ -46,6 +46,7 @@ public interface ICatalogService
     Task<DTOs.CatalogItemResponse> CreateCatalogItemAsync(Entities.ClientApplication app, DTOs.CreateCatalogItemRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DTOs.ProductResponse>> ListProductsAsync(Entities.ClientApplication app, CancellationToken cancellationToken = default);
     Task<DTOs.ProductResponse?> GetProductAsync(Entities.ClientApplication app, string productCode, CancellationToken cancellationToken = default);
+    Task<DTOs.ProductResponse> SyncProductToStripeAsync(Entities.ClientApplication app, string productCode, CancellationToken cancellationToken = default);
 }
 
 public interface IDashboardService

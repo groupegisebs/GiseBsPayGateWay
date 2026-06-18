@@ -93,4 +93,21 @@ public class ProductsController : ControllerBase
             return BadRequest(new ApiErrorResponse(ex.Message, null));
         }
     }
+
+    [HttpPost("{productCode}/sync-stripe")]
+    public async Task<ActionResult<ProductResponse>> SyncStripe(
+        string productCode,
+        CancellationToken cancellationToken)
+    {
+        var app = HttpContext.GetClientApplicationContext().Application;
+        try
+        {
+            var product = await _catalogService.SyncProductToStripeAsync(app, productCode, cancellationToken);
+            return Ok(product);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiErrorResponse(ex.Message, null));
+        }
+    }
 }

@@ -48,7 +48,7 @@ public class CatalogService : ICatalogService
 
         if (request.SyncToStripe)
         {
-            await SyncProductToStripeAsync(product, cancellationToken);
+            await SyncProductToStripeInternalAsync(product, cancellationToken);
         }
 
         await _auditService.LogAsync(
@@ -158,7 +158,7 @@ public class CatalogService : ICatalogService
 
         if (request.SyncToStripe)
         {
-            await SyncProductToStripeAsync(product, cancellationToken);
+            await SyncProductToStripeInternalAsync(product, cancellationToken);
             await SyncPlanToStripeAsync(product, plan, cancellationToken);
         }
 
@@ -199,6 +199,33 @@ public class CatalogService : ICatalogService
             : MapProduct(product, product.PricingPlans.Where(x => x.IsActive).ToList());
     }
 
+    public async Task<ProductResponse> SyncProductToStripeAsync(
+        ClientApplication app,
+        string productCode,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await _db.Products
+            .Include(x => x.PricingPlans)
+            .FirstOrDefaultAsync(
+                x => x.ClientApplicationId == app.Id && x.ProductCode == NormalizeCode(productCode) && x.IsActive,
+                cancellationToken)
+            ?? throw new InvalidOperationException($"Produit '{NormalizeCode(productCode)}' introuvable.");
+
+        await SyncProductToStripeInternalAsync(product, cancellationToken);
+
+        var activePlans = product.PricingPlans.Where(x => x.IsActive).ToList();
+        foreach (var plan in activePlans)
+        {
+            await SyncPlanToStripeAsync(product, plan, cancellationToken);
+        }
+
+        await _auditService.LogAsync(
+            "ProductSyncedToStripe", nameof(Product), product.Id.ToString(), true,
+            product.ProductCode, app.AppCode);
+
+        return MapProduct(product, activePlans);
+    }
+
     private async Task<Product> FindActiveProductAsync(
         ClientApplication app,
         string productCode,
@@ -211,7 +238,7 @@ public class CatalogService : ICatalogService
                ?? throw new InvalidOperationException($"Produit '{normalizedCode}' introuvable.");
     }
 
-    private async Task SyncProductToStripeAsync(Product product, CancellationToken cancellationToken)
+    private async Task SyncProductToStripeInternalAsync(Product product, CancellationToken cancellationToken)
     {
         product.StripeProductId = await _stripeService.EnsureStripeProductAsync(product, cancellationToken);
     }
@@ -220,7 +247,7 @@ public class CatalogService : ICatalogService
     {
         if (string.IsNullOrWhiteSpace(product.StripeProductId))
         {
-            await SyncProductToStripeAsync(product, cancellationToken);
+            await SyncProductToStripeInternalAsync(product, cancellationToken);
         }
 
         plan.StripePriceId = await _stripeService.EnsureStripePriceAsync(

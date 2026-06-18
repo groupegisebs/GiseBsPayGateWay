@@ -82,4 +82,39 @@ public class CatalogServiceTests
         Assert.Equal("API-PRODUCT", result.Product.ProductCode);
         Assert.Equal("MONTHLY", result.Plan.PlanCode);
     }
+
+    [Fact]
+    public async Task SyncProductToStripeAsync_SynchroniseProduitEtPlans()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(SyncProductToStripeAsync_SynchroniseProduitEtPlans));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        await TestDbContextFactory.SeedProductPlanAsync(db, app, "VENDOR-CREATOR-PLAN", "MONTHLY", 5m);
+
+        var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.EnsureStripeProductAsync(It.IsAny<Entities.Product>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("prod_sync_1");
+        stripe.Setup(s => s.EnsureStripePriceAsync(It.IsAny<Entities.PricingPlan>(), "prod_sync_1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("price_sync_1");
+
+        var sut = new CatalogService(db, stripe.Object, Mock.Of<IAuditService>());
+
+        var result = await sut.SyncProductToStripeAsync(app, "VENDOR-CREATOR-PLAN");
+
+        Assert.Equal("prod_sync_1", result.StripeProductId);
+        Assert.NotNull(result.Plans);
+        Assert.Equal("price_sync_1", result.Plans!.Single().StripePriceId);
+        stripe.Verify(s => s.EnsureStripeProductAsync(It.IsAny<Entities.Product>(), It.IsAny<CancellationToken>()), Times.Once);
+        stripe.Verify(s => s.EnsureStripePriceAsync(It.IsAny<Entities.PricingPlan>(), "prod_sync_1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SyncProductToStripeAsync_ProduitInconnu_LeveInvalidOperationException()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(SyncProductToStripeAsync_ProduitInconnu_LeveInvalidOperationException));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var sut = new CatalogService(db, Mock.Of<IStripeService>(), Mock.Of<IAuditService>());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.SyncProductToStripeAsync(app, "MISSING-PRODUCT"));
+    }
 }

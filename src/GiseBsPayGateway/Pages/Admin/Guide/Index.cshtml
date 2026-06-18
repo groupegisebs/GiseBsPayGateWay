@@ -142,6 +142,7 @@ Content-Type: application/json
                 <tr><td><code>POST</code></td><td><code>/api/products/{code}/plans</code></td><td>Ajouter un plan à un produit</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/products</code></td><td>Lister les produits de l'application</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/products/{code}</code></td><td>Détail produit + plans actifs</td></tr>
+                <tr><td><code>POST</code></td><td><code>/api/products/{code}/sync-stripe</code></td><td>Synchroniser un produit existant et ses plans actifs vers Stripe</td></tr>
                 <tr><td><code>POST</code></td><td><code>/api/checkout/session</code></td><td>Créer une session Stripe Checkout</td></tr>
                 <tr><td><code>POST</code></td><td><code>/api/tax/calculate</code></td><td>Calculer les taxes applicables pour une adresse (Stripe Tax Calculation API)</td></tr>
                 <tr><td><code>GET</code></td><td><code>/api/payments/{paymentCode}</code></td><td>Statut d'un paiement</td></tr>

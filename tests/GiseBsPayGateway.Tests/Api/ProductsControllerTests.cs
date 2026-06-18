@@ -52,4 +52,27 @@ public class ProductsControllerTests
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.IsType<ApiErrorResponse>(badRequest.Value);
     }
+
+    [Fact]
+    public async Task SyncStripe_Succes_Retourne200()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(SyncStripe_Succes_Retourne200));
+        var (app, _, apiKey) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+
+        var expected = new ProductResponse(
+            "VENDOR-CREATOR-PLAN", "Seller plan", null, true, "prod_1", DateTime.UtcNow,
+            [new PricingPlanResponse("MONTHLY", "Mensuel", 5m, "USD", "Monthly", true, "price_1", DateTime.UtcNow)]);
+
+        var catalog = new Mock<ICatalogService>();
+        catalog.Setup(s => s.SyncProductToStripeAsync(app, "VENDOR-CREATOR-PLAN", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var controller = new ProductsController(catalog.Object);
+        ControllerTestHelper.SetClientApplicationContext(controller, app, apiKey);
+
+        var result = await controller.SyncStripe("VENDOR-CREATOR-PLAN", CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(expected, ok.Value);
+    }
 }
