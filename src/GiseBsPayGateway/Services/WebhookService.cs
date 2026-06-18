@@ -178,6 +178,33 @@ public class WebhookService : IWebhookService
         await FinalizeSuccessfulCheckoutAsync(payment, resolvedSession, cancellationToken);
     }
 
+    public async Task<bool> TryCompleteFromCheckoutSessionAsync(
+        Entities.PaymentTransaction payment,
+        Session session,
+        CancellationToken cancellationToken = default)
+    {
+        if (payment.Status == PaymentStatus.Succeeded)
+        {
+            return true;
+        }
+
+        if (!StripePaymentVerification.IsCheckoutSessionPaymentConfirmed(session))
+        {
+            return false;
+        }
+
+        if (!await IsPaymentIntentConfirmedAsync(session.PaymentIntentId, cancellationToken))
+        {
+            return false;
+        }
+
+        var resolvedSession = await _stripePaymentDetailsService.GetCheckoutSessionAsync(session.Id, cancellationToken)
+            ?? session;
+
+        await FinalizeSuccessfulCheckoutAsync(payment, resolvedSession, cancellationToken);
+        return true;
+    }
+
     private async Task HandleCheckoutAsyncPaymentSucceededAsync(Event stripeEvent, CancellationToken cancellationToken)
     {
         var session = stripeEvent.Data.Object as Session
