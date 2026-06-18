@@ -42,23 +42,12 @@ public class StripeService : IStripeService
 
         if (!string.IsNullOrWhiteSpace(product.StripeProductId))
         {
-            if (await TryEnsureStripeProductTaxCodeAsync(product.StripeProductId, cancellationToken))
-            {
-                return product.StripeProductId;
-            }
-
-            _logger.LogWarning(
-                "Produit Stripe {StripeProductId} introuvable pour {ProductCode}, recréation",
-                product.StripeProductId,
-                product.ProductCode);
-
-            product.StripeProductId = null;
-            product.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
+            await EnsureStripeProductTaxCodeAsync(product.StripeProductId, cancellationToken);
+            return product.StripeProductId;
         }
 
         var service = new ProductService();
-        var createOptions = new ProductCreateOptions
+        var stripeProduct = await service.CreateAsync(new ProductCreateOptions
         {
             Name = product.Name,
             Description = product.Description,
@@ -68,19 +57,7 @@ public class StripeService : IStripeService
                 ["product_code"] = product.ProductCode,
                 ["client_app_id"] = product.ClientApplicationId.ToString()
             }
-        };
-
-        Stripe.Product stripeProduct;
-        try
-        {
-            stripeProduct = await service.CreateAsync(createOptions, cancellationToken: cancellationToken);
-        }
-        catch (StripeException ex) when (createOptions.TaxCode is not null)
-        {
-            _logger.LogWarning(ex, "Création produit Stripe sans tax code pour {ProductCode}", product.ProductCode);
-            createOptions.TaxCode = null;
-            stripeProduct = await service.CreateAsync(createOptions, cancellationToken: cancellationToken);
-        }
+        }, cancellationToken: cancellationToken);
 
         product.StripeProductId = stripeProduct.Id;
         product.UpdatedAt = DateTime.UtcNow;
@@ -94,19 +71,8 @@ public class StripeService : IStripeService
 
         if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
         {
-            if (await StripePriceExistsAsync(plan.StripePriceId, cancellationToken))
-            {
-                return plan.StripePriceId;
-            }
-
-            _logger.LogWarning(
-                "Prix Stripe {StripePriceId} introuvable pour le plan {PlanCode}, recréation",
-                plan.StripePriceId,
-                plan.PlanCode);
-
-            plan.StripePriceId = null;
-            plan.UpdatedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
+            await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
+            return plan.StripePriceId;
         }
 
         var service = new PriceService();
@@ -283,44 +249,35 @@ public class StripeService : IStripeService
         }, cancellationToken: cancellationToken);
     }
 
-    private static async Task<bool> TryEnsureStripeProductTaxCodeAsync(
-        string stripeProductId,
-        CancellationToken cancellationToken)
+    private static async Task EnsureStripeProductTaxCodeAsync(string stripeProductId, CancellationToken cancellationToken)
     {
         var service = new ProductService();
-        try
+        var product = await service.GetAsync(stripeProductId, cancellationToken: cancellationToken);
+        if (product.TaxCode is not null)
         {
-            var product = await service.GetAsync(stripeProductId, cancellationToken: cancellationToken);
-            if (product.TaxCode is not null)
-            {
-                return true;
-            }
-
-            await service.UpdateAsync(stripeProductId, new ProductUpdateOptions
-            {
-                TaxCode = StripeTaxDefaults.DigitalProductTaxCode
-            }, cancellationToken: cancellationToken);
-
-            return true;
+            return;
         }
-        catch (StripeException ex) when (StripeErrorMessages.IsResourceMissing(ex))
+
+        await service.UpdateAsync(stripeProductId, new ProductUpdateOptions
         {
-            return false;
-        }
+            TaxCode = StripeTaxDefaults.DigitalProductTaxCode
+        }, cancellationToken: cancellationToken);
     }
 
-    private static async Task<bool> StripePriceExistsAsync(string stripePriceId, CancellationToken cancellationToken)
+    private static async Task EnsureStripePriceTaxBehaviorAsync(string stripePriceId, CancellationToken cancellationToken)
     {
         var service = new PriceService();
-        try
+        var price = await service.GetAsync(stripePriceId, cancellationToken: cancellationToken);
+        if (!string.IsNullOrWhiteSpace(price.TaxBehavior) &&
+            !string.Equals(price.TaxBehavior, "unspecified", StringComparison.OrdinalIgnoreCase))
         {
-            await service.GetAsync(stripePriceId, cancellationToken: cancellationToken);
-            return true;
+            return;
         }
-        catch (StripeException ex) when (StripeErrorMessages.IsResourceMissing(ex))
+
+        await service.UpdateAsync(stripePriceId, new PriceUpdateOptions
         {
-            return false;
-        }
+            TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive
+        }, cancellationToken: cancellationToken);
     }
 
     public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)
