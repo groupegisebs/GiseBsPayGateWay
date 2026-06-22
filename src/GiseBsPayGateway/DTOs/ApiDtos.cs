@@ -57,10 +57,7 @@ public record PaymentResponse(
     string? BillingCountry = null,
     string? BillingState = null,
     BillingAddressDto? BillingAddress = null,
-    IReadOnlyList<CollectedTaxLineDto>? TaxBreakdown = null,
-    decimal? OriginalAmount = null,
-    string? OriginalCurrency = null,
-    decimal? ExchangeRate = null);
+    IReadOnlyList<CollectedTaxLineDto>? TaxBreakdown = null);
 
 public record InvoiceResponse(
     string InvoiceNumber,

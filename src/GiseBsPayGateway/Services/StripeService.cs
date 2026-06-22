@@ -16,10 +16,7 @@ public class StripeService : IStripeService
     private readonly IStripeSettingsProvider _stripeSettings;
     private readonly ILogger<StripeService> _logger;
 
-    public StripeService(
-        ApplicationDbContext db,
-        IStripeSettingsProvider stripeSettings,
-        ILogger<StripeService> logger)
+    public StripeService(ApplicationDbContext db, IStripeSettingsProvider stripeSettings, ILogger<StripeService> logger)
     {
         _db = db;
         _stripeSettings = stripeSettings;
@@ -72,37 +69,23 @@ public class StripeService : IStripeService
     {
         await ConfigureStripeAsync(cancellationToken);
 
-        var unitAmount = ToStripeMinorUnits(plan.Amount);
-        var currency = plan.Currency.ToLowerInvariant();
-
         if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
         {
-            if (await IsStripePriceCurrentAsync(plan.StripePriceId, unitAmount, currency, cancellationToken))
-            {
-                await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
-                return plan.StripePriceId;
-            }
-
-            _logger.LogInformation(
-                "Prix Stripe {PriceId} obsolète pour le plan {PlanCode}; création d'un prix {Currency}",
-                plan.StripePriceId,
-                plan.PlanCode,
-                currency.ToUpperInvariant());
+            await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
+            return plan.StripePriceId;
         }
 
         var service = new PriceService();
-        var metadata = new Dictionary<string, string>
-        {
-            ["plan_code"] = plan.PlanCode
-        };
-
         var options = new PriceCreateOptions
         {
             Product = stripeProductId,
-            UnitAmount = unitAmount,
-            Currency = currency,
+            UnitAmount = (long)(plan.Amount * 100),
+            Currency = plan.Currency.ToLowerInvariant(),
             TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive,
-            Metadata = metadata
+            Metadata = new Dictionary<string, string>
+            {
+                ["plan_code"] = plan.PlanCode
+            }
         };
 
         if (plan.BillingInterval != BillingInterval.OneTime)
@@ -118,21 +101,6 @@ public class StripeService : IStripeService
         plan.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         return stripePrice.Id;
-    }
-
-    private static long ToStripeMinorUnits(decimal amount) =>
-        (long)Math.Round(amount * 100m, MidpointRounding.AwayFromZero);
-
-    private static async Task<bool> IsStripePriceCurrentAsync(
-        string stripePriceId,
-        long expectedUnitAmount,
-        string expectedCurrency,
-        CancellationToken cancellationToken)
-    {
-        var service = new PriceService();
-        var price = await service.GetAsync(stripePriceId, cancellationToken: cancellationToken);
-        return string.Equals(price.Currency, expectedCurrency, StringComparison.OrdinalIgnoreCase)
-            && price.UnitAmount == expectedUnitAmount;
     }
 
     public async Task<string?> GetOrCreateStripeCustomerAsync(CustomerEntity customer, CancellationToken cancellationToken = default)

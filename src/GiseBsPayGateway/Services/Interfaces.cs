@@ -32,7 +32,6 @@ public interface IPaymentService
 public interface IWebhookService
 {
     Task ProcessStripeWebhookAsync(string json, string signatureHeader, CancellationToken cancellationToken = default);
-    Task<bool> TryCompleteFromCheckoutSessionAsync(Entities.PaymentTransaction payment, Stripe.Checkout.Session session, CancellationToken cancellationToken = default);
 }
 
 public interface IJwtTokenService

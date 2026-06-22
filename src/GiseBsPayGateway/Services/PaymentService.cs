@@ -71,7 +71,6 @@ public class PaymentService : IPaymentService
         }
 
         var paymentCode = $"PAY-{app.AppCode.ToUpperInvariant()}-{Guid.NewGuid():N}"[..32];
-
         var payment = new PaymentTransaction
         {
             ClientApplicationId = app.Id,
@@ -90,12 +89,10 @@ public class PaymentService : IPaymentService
         _db.PaymentTransactions.Add(payment);
         await _db.SaveChangesAsync(cancellationToken);
 
-        if (request.BillingAddress is { } rawBillingAddress)
+        if (request.BillingAddress is { } billingAddress)
         {
-            var billingAddress = StripeAddressFormatter.Format(rawBillingAddress);
-            payment.BillingCountry = billingAddress.Country;
-            payment.BillingState = billingAddress.State;
-            request = request with { BillingAddress = billingAddress };
+            payment.BillingCountry = billingAddress.Country.Trim().ToUpperInvariant();
+            payment.BillingState = billingAddress.State?.Trim();
         }
 
         var (sessionId, url, clientSecret) = await _stripeService.CreateCheckoutSessionAsync(
@@ -224,10 +221,7 @@ public class PaymentService : IPaymentService
             collectedTax?.BillingCountry ?? payment.BillingCountry,
             collectedTax?.BillingState ?? payment.BillingState,
             collectedTax is not null ? CollectedTaxMapper.ToBillingAddressDto(collectedTax) : null,
-            collectedTax is not null ? CollectedTaxMapper.ToLineDtos(collectedTax.Lines) : null,
-            payment.OriginalAmount,
-            payment.OriginalCurrency,
-            payment.ExchangeRate);
+            collectedTax is not null ? CollectedTaxMapper.ToLineDtos(collectedTax.Lines) : null);
 
     private static SubscriptionResponse MapSubscription(Subscription subscription) =>
         new(
