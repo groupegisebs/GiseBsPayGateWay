@@ -41,6 +41,16 @@ STAGING_REMOTE="/tmp/${SERVICE_NAME}-gha-$(date +%Y%m%d-%H%M%S)"
 SSH_OPTS=(-p "${SSH_PORT}" -o BatchMode=yes -o StrictHostKeyChecking=yes)
 SCP_OPTS=(-P "${SSH_PORT}" -o BatchMode=yes -o StrictHostKeyChecking=yes)
 SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+SSH_CONTROL_PATH="/tmp/${SERVICE_NAME}-ssh-$$"
+SSH_MUX_OPTS=(-o ControlMaster=auto -o "ControlPath=${SSH_CONTROL_PATH}" -o ControlPersist=300)
+SSH_OPTS+=("${SSH_MUX_OPTS[@]}")
+SCP_OPTS+=("${SSH_MUX_OPTS[@]}")
+
+cleanup_ssh_mux() {
+  ssh "${SSH_OPTS[@]}" -O exit "${SSH_TARGET}" 2>/dev/null || true
+  rm -f "${SSH_CONTROL_PATH}" 2>/dev/null || true
+}
+trap cleanup_ssh_mux EXIT
 
 if [[ -n "${SSH_KEY_PATH:-}" ]]; then
   SSH_OPTS+=(-i "${SSH_KEY_PATH}")
