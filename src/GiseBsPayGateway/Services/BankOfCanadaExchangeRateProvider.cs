@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using GiseBsPayGateway.Options;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -12,19 +13,13 @@ public interface IExchangeRateProvider
     Task<IReadOnlyDictionary<string, decimal>> GetRatesToCadAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>Taux quotidiens Banque du Canada (Valet API), avec cache et repli config.</summary>
-public class BankOfCanadaExchangeRateProvider : IExchangeRateProvider
+/// <summary>Taux quotidiens Banque du Canada (groupe FX_RATES_DAILY), avec cache et repli config.</summary>
+public partial class BankOfCanadaExchangeRateProvider : IExchangeRateProvider
 {
     private const string CacheKey = "boc:fx-rates-to-cad";
 
-    private static readonly IReadOnlyDictionary<string, string> SeriesByCurrency =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["usd"] = "FXUSDCAD",
-            ["eur"] = "FXEURCAD",
-            ["gbp"] = "FXGBPCAD",
-            ["chf"] = "FXCHFCAD"
-        };
+    [GeneratedRegex("^FX([A-Z]{3})CAD$", RegexOptions.CultureInvariant)]
+    private static partial Regex FxSeriesRegex();
 
     private readonly HttpClient _httpClient;
     private readonly IMemoryCache _cache;
@@ -58,8 +53,9 @@ public class BankOfCanadaExchangeRateProvider : IExchangeRateProvider
             {
                 rates = await FetchLiveRatesAsync(cancellationToken);
                 _logger.LogInformation(
-                    "Taux BoC chargés : {Rates}",
-                    string.Join(", ", rates.Select(kv => $"{kv.Key.ToUpperInvariant()}={kv.Value}")));
+                    "Taux BoC chargés ({Count}) : {Rates}",
+                    rates.Count,
+                    string.Join(", ", rates.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key.ToUpperInvariant()}={kv.Value}")));
             }
             catch (Exception ex)
             {
@@ -89,28 +85,46 @@ public class BankOfCanadaExchangeRateProvider : IExchangeRateProvider
             throw new InvalidOperationException("Réponse Banque du Canada sans observations.");
         }
 
-        var observation = observations[observations.GetArrayLength() - 1];
         var rates = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
         {
             ["cad"] = 1m
         };
 
-        foreach (var (currency, series) in SeriesByCurrency)
+        // Du plus récent au plus ancien : première valeur vue = taux le plus récent pour chaque devise.
+        for (var i = observations.GetArrayLength() - 1; i >= 0; i--)
         {
-            if (!observation.TryGetProperty(series, out var seriesNode) ||
-                !seriesNode.TryGetProperty("v", out var valueNode))
+            foreach (var property in observations[i].EnumerateObject())
             {
-                continue;
-            }
+                if (property.NameEquals("d"))
+                {
+                    continue;
+                }
 
-            var raw = valueNode.GetString();
-            if (decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var rate) && rate > 0)
-            {
-                rates[currency] = rate;
+                var match = FxSeriesRegex().Match(property.Name);
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                var currency = match.Groups[1].Value.ToLowerInvariant();
+                if (rates.ContainsKey(currency))
+                {
+                    continue;
+                }
+
+                if (!property.Value.TryGetProperty("v", out var valueNode))
+                {
+                    continue;
+                }
+
+                var raw = valueNode.GetString();
+                if (decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var rate) && rate > 0)
+                {
+                    rates[currency] = rate;
+                }
             }
         }
 
-        // Compléter les devises manquantes depuis le repli config.
         foreach (var (currency, fallbackRate) in _options.RatesToCad)
         {
             if (!rates.ContainsKey(currency) && fallbackRate > 0)

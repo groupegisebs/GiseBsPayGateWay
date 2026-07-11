@@ -21,7 +21,27 @@ public static class CatalogOptions
         new("eur", "EUR — Euro"),
         new("gbp", "GBP — Livre sterling"),
         new("cad", "CAD — Dollar canadien"),
-        new("chf", "CHF — Franc suisse")
+        new("chf", "CHF — Franc suisse"),
+        new("jpy", "JPY — Yen japonais"),
+        new("aud", "AUD — Dollar australien"),
+        new("nzd", "NZD — Dollar néo-zélandais"),
+        new("cny", "CNY — Yuan chinois"),
+        new("hkd", "HKD — Dollar de Hong Kong"),
+        new("sgd", "SGD — Dollar de Singapour"),
+        new("inr", "INR — Roupie indienne"),
+        new("krw", "KRW — Won sud-coréen"),
+        new("sek", "SEK — Couronne suédoise"),
+        new("nok", "NOK — Couronne norvégienne"),
+        new("mxn", "MXN — Peso mexicain"),
+        new("brl", "BRL — Real brésilien"),
+        new("zar", "ZAR — Rand sud-africain"),
+        new("pln", "PLN — Zloty polonais"),
+        new("thb", "THB — Baht thaïlandais"),
+        new("myr", "MYR — Ringgit malaisien"),
+        new("twd", "TWD — Dollar taïwanais"),
+        new("try", "TRY — Livre turque"),
+        new("idr", "IDR — Roupie indonésienne"),
+        new("pen", "PEN — Sol péruvien")
     ];
 
     public record PlanCodeOption(string Code, string Label, BillingInterval BillingInterval);

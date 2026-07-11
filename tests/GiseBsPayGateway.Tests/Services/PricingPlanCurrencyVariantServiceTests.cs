@@ -38,17 +38,24 @@ public class CurrencyConversionServiceTests
 public class BankOfCanadaExchangeRateProviderTests
 {
     [Fact]
-    public async Task GetRatesToCadAsync_ParseReponseBoc()
+    public async Task GetRatesToCadAsync_ParseGroupeFxRatesDaily()
     {
         var json = """
             {
               "observations": [
                 {
+                  "d": "2019-12-31",
+                  "FXVNDCAD": { "v": "0.000056" }
+                },
+                {
                   "d": "2026-07-10",
                   "FXUSDCAD": { "v": "1.4146" },
                   "FXEURCAD": { "v": "1.6161" },
                   "FXGBPCAD": { "v": "1.8970" },
-                  "FXCHFCAD": { "v": "1.7516" }
+                  "FXCHFCAD": { "v": "1.7516" },
+                  "FXJPYCAD": { "v": "0.008750" },
+                  "FXAUDCAD": { "v": "0.9836" },
+                  "FXCNYCAD": { "v": "0.2087" }
                 }
               ]
             }
@@ -78,6 +85,10 @@ public class BankOfCanadaExchangeRateProviderTests
         Assert.Equal(1.6161m, rates["eur"]);
         Assert.Equal(1.8970m, rates["gbp"]);
         Assert.Equal(1.7516m, rates["chf"]);
+        Assert.Equal(0.008750m, rates["jpy"]);
+        Assert.Equal(0.9836m, rates["aud"]);
+        Assert.Equal(0.2087m, rates["cny"]);
+        Assert.Equal(0.000056m, rates["vnd"]);
     }
 
     private sealed class StubHttpMessageHandler(string json) : HttpMessageHandler
