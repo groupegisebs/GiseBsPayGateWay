@@ -189,24 +189,28 @@ public class PaymentService : IPaymentService
             throw new InvalidOperationException("Abonnement Stripe non lié.");
         }
 
-        await _stripeService.CancelSubscriptionAsync(subscription.StripeSubscriptionId, request.CancelImmediately, cancellationToken);
+        // Toujours fin de période : l'accès reste jusqu'à CurrentPeriodEnd.
+        await _stripeService.CancelSubscriptionAsync(
+            subscription.StripeSubscriptionId,
+            cancelImmediately: false,
+            cancellationToken);
 
-        subscription.CancelAtPeriodEnd = !request.CancelImmediately;
-        if (request.CancelImmediately)
+        subscription.CancelAtPeriodEnd = true;
+        subscription.CancelledAt = DateTime.UtcNow;
+        if (subscription.Status is SubscriptionStatus.Cancelled)
         {
-            subscription.Status = SubscriptionStatus.Cancelled;
-            subscription.CancelledAt = DateTime.UtcNow;
+            subscription.Status = SubscriptionStatus.Active;
         }
 
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
 
         await _auditService.LogAsync("SubscriptionCancelled", nameof(Subscription), subscription.Id.ToString(), true,
-            $"Code={subscription.SubscriptionCode}", app.AppCode);
+            $"Code={subscription.SubscriptionCode}; EndsAt={subscription.CurrentPeriodEnd:o}", app.AppCode);
 
         return new CancelSubscriptionResponse(
             subscription.SubscriptionCode,
-            subscription.Status.ToString(),
+            SubscriptionLifecycle.GetEffectiveStatus(subscription).ToString(),
             subscription.CancelledAt);
     }
 
@@ -243,11 +247,11 @@ public class PaymentService : IPaymentService
     private static SubscriptionResponse MapSubscription(Subscription subscription) =>
         new(
             subscription.SubscriptionCode,
-            subscription.Status.ToString(),
+            SubscriptionLifecycle.GetEffectiveStatus(subscription).ToString(),
             subscription.Customer.CustomerCode,
             subscription.Product.ProductCode,
             subscription.PricingPlan.PlanCode,
             subscription.CurrentPeriodStart,
             subscription.CurrentPeriodEnd,
-            subscription.CancelAtPeriodEnd);
+            SubscriptionLifecycle.IsScheduledToEnd(subscription) || subscription.CancelAtPeriodEnd);
 }

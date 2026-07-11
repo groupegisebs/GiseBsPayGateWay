@@ -55,6 +55,8 @@ public class DetailsModel : PageModel
     public bool CanUndoSchedule { get; private set; }
     public bool CanDeleteLocal { get; private set; } = true;
     public bool CanReactivate { get; private set; }
+    public SubscriptionStatus EffectiveStatus { get; private set; }
+    public bool IsScheduledToEnd { get; private set; }
 
     public record PaymentHistoryVm(
         DateTime Date,
@@ -117,21 +119,25 @@ public class DetailsModel : PageModel
         if (subscription is null)
             return NotFound();
 
-        // Annulation programmée mais encore actif → simplement retirer le flag.
-        if (subscription.CancelAtPeriodEnd
-            && subscription.Status is not SubscriptionStatus.Cancelled)
+        // Encore dans la période payée après demande d'annulation → reprendre le renouvellement.
+        if (SubscriptionLifecycle.IsScheduledToEnd(subscription))
         {
-            if (string.IsNullOrWhiteSpace(subscription.StripeSubscriptionId))
-            {
-                TempData["Error"] = "Abonnement Stripe non lié.";
-                return RedirectToPage(new { id });
-            }
-
             try
             {
-                await _stripeService.SetCancelAtPeriodEndAsync(
-                    subscription.StripeSubscriptionId, false, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(subscription.StripeSubscriptionId)
+                    && subscription.Status != SubscriptionStatus.Cancelled)
+                {
+                    await _stripeService.SetCancelAtPeriodEndAsync(
+                        subscription.StripeSubscriptionId, false, cancellationToken);
+                }
+
                 subscription.CancelAtPeriodEnd = false;
+                subscription.CancelledAt = null;
+                if (subscription.Status == SubscriptionStatus.Cancelled)
+                {
+                    subscription.Status = SubscriptionStatus.Active;
+                }
+
                 subscription.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync(cancellationToken);
 
@@ -144,7 +150,8 @@ public class DetailsModel : PageModel
                     subscription.ClientApplication.AppCode,
                     userName: User.Identity?.Name);
 
-                TempData["Success"] = "Annulation annulée — l'abonnement reste actif.";
+                TempData["Success"] =
+                    "Annulation retirée — l'abonnement reste actif et se renouvellera au-delà de la période.";
             }
             catch (Exception ex)
             {
@@ -300,33 +307,33 @@ public class DetailsModel : PageModel
 
         try
         {
+            // Toujours annulation en fin de période (accès jusqu'à CurrentPeriodEnd).
             await _stripeService.CancelSubscriptionAsync(
                 subscription.StripeSubscriptionId,
-                cancelImmediately,
+                cancelImmediately: false,
                 cancellationToken);
 
-            subscription.CancelAtPeriodEnd = !cancelImmediately;
-            if (cancelImmediately)
+            subscription.CancelAtPeriodEnd = true;
+            subscription.CancelledAt = DateTime.UtcNow;
+            if (subscription.Status == SubscriptionStatus.Cancelled)
             {
-                subscription.Status = SubscriptionStatus.Cancelled;
-                subscription.CancelledAt = DateTime.UtcNow;
+                subscription.Status = SubscriptionStatus.Active;
             }
 
             subscription.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
 
             await _auditService.LogAsync(
-                cancelImmediately ? "SubscriptionCancelledImmediate" : "SubscriptionCancelScheduled",
+                "SubscriptionCancelScheduled",
                 nameof(Subscription),
                 subscription.Id.ToString(),
                 true,
-                $"Code={subscription.SubscriptionCode}; Immediate={cancelImmediately}; PeriodEnd={subscription.CurrentPeriodEnd:o}",
+                $"Code={subscription.SubscriptionCode}; EndsAt={subscription.CurrentPeriodEnd:o}",
                 subscription.ClientApplication.AppCode,
                 userName: User.Identity?.Name);
 
-            TempData["Success"] = cancelImmediately
-                ? "Abonnement annulé immédiatement."
-                : $"Annulation programmée en fin de période{(subscription.CurrentPeriodEnd.HasValue ? $" ({subscription.CurrentPeriodEnd:g})" : "")}.";
+            TempData["Success"] =
+                $"Annulation programmée — l'abonnement reste actif jusqu'au {(subscription.CurrentPeriodEnd?.ToString("g") ?? "fin de période")}.";
         }
         catch (Exception ex)
         {
@@ -445,16 +452,19 @@ public class DetailsModel : PageModel
         DisplayCurrency = subscription.StripeCurrency ?? subscription.PricingPlan.Currency;
         StripeSyncedAt = subscription.StripeSyncedAt;
 
-        var activeLike = subscription.Status is SubscriptionStatus.Active
+        EffectiveStatus = SubscriptionLifecycle.GetEffectiveStatus(subscription);
+        IsScheduledToEnd = SubscriptionLifecycle.IsScheduledToEnd(subscription);
+
+        var activeLike = EffectiveStatus is SubscriptionStatus.Active
             or SubscriptionStatus.Trialing
             or SubscriptionStatus.PastDue
             or SubscriptionStatus.Unpaid;
 
-        CanScheduleCancel = activeLike && !subscription.CancelAtPeriodEnd;
-        CanCancelImmediately = activeLike;
-        CanUndoSchedule = activeLike && subscription.CancelAtPeriodEnd;
-        CanReactivate = subscription.Status == SubscriptionStatus.Cancelled
-                        || (activeLike && subscription.CancelAtPeriodEnd);
+        CanScheduleCancel = activeLike && !IsScheduledToEnd;
+        CanCancelImmediately = false; // annulation immédiate désactivée — toujours fin de période
+        CanUndoSchedule = IsScheduledToEnd && EffectiveStatus != SubscriptionStatus.Cancelled;
+        CanReactivate = IsScheduledToEnd
+                        || subscription.Status == SubscriptionStatus.Cancelled;
 
         PaymentHistory = await LoadPaymentHistoryAsync(id, cancellationToken);
 

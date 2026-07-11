@@ -5,7 +5,7 @@
     ViewData["Title"] = $"Abonnement {Model.Subscription.SubscriptionCode}";
     Layout = "_Layout";
     var sub = Model.Subscription;
-    var statusClass = sub.Status switch
+    var statusClass = Model.EffectiveStatus switch
     {
         SubscriptionStatus.Active => "text-bg-success",
         SubscriptionStatus.Trialing => "text-bg-info",
@@ -29,10 +29,10 @@
     <div>
         <h1 class="mb-1">Abonnement <code>@sub.SubscriptionCode</code></h1>
         <div class="d-flex flex-wrap gap-2 align-items-center">
-            <span class="badge @statusClass">@sub.Status</span>
-            @if (sub.CancelAtPeriodEnd)
+            <span class="badge @statusClass">@Model.EffectiveStatus</span>
+            @if (Model.IsScheduledToEnd)
             {
-                <span class="badge text-bg-warning">Annulation programmée fin de période</span>
+                <span class="badge text-bg-warning">Actif jusqu'au @sub.CurrentPeriodEnd?.ToString("g")</span>
             }
             @if (Model.AmountFromStripe)
             {
@@ -71,8 +71,24 @@
                     </dd>
                     <dt class="col-sm-4">Annulé le</dt>
                     <dd class="col-sm-8">@(sub.CancelledAt?.ToString("f") ?? "—")</dd>
+                    <dt class="col-sm-4">Fin d'accès</dt>
+                    <dd class="col-sm-8">
+                        @if (Model.IsScheduledToEnd)
+                        {
+                            <strong>@sub.CurrentPeriodEnd?.ToString("f")</strong>
+                            <div class="small text-muted">Reste actif jusqu'à cette date, puis se termine automatiquement.</div>
+                        }
+                        else if (Model.EffectiveStatus == SubscriptionStatus.Cancelled)
+                        {
+                            <span>Terminé</span>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd>
                     <dt class="col-sm-4">Cancel at period end</dt>
-                    <dd class="col-sm-8">@(sub.CancelAtPeriodEnd ? "Oui" : "Non")</dd>
+                    <dd class="col-sm-8">@(Model.IsScheduledToEnd || sub.CancelAtPeriodEnd ? "Oui" : "Non")</dd>
                     <dt class="col-sm-4">Stripe Subscription</dt>
                     <dd class="col-sm-8"><code>@(sub.StripeSubscriptionId ?? "—")</code></dd>
                 </dl>
@@ -216,19 +232,19 @@
                 @if (Model.CanReactivate)
                 {
                     <form method="post" asp-page-handler="Reactivate" asp-route-id="@sub.Id"
-                          onsubmit="return confirm('Réactiver cet abonnement ? Si l\'abonnement Stripe est déjà canceled, un NOUVEL abonnement sera créé (même client / même plan) et facturé immédiatement si un moyen de paiement est enregistré.');">
+                          onsubmit="return confirm('Réactiver cet abonnement ?');">
                         <button type="submit" class="btn btn-success w-100">
                             Réactiver l'abonnement
                         </button>
                     </form>
                     <p class="small text-muted mb-0">
-                        @if (sub.Status == SubscriptionStatus.Cancelled)
+                        @if (Model.IsScheduledToEnd)
                         {
-                            <span>Stripe ne permet pas de redémarrer un abonnement canceled : un nouvel abonnement sera créé.</span>
+                            <span>Retire l'annulation : l'abonnement continue au-delà de la période.</span>
                         }
                         else
                         {
-                            <span>Retire l'annulation programmée en fin de période.</span>
+                            <span>Stripe ne permet pas de redémarrer un abonnement canceled : un nouvel abonnement sera créé.</span>
                         }
                     </p>
                     <hr />
@@ -237,14 +253,13 @@
                 @if (Model.CanScheduleCancel)
                 {
                     <form method="post" asp-page-handler="ScheduleCancel" asp-route-id="@sub.Id"
-                          onsubmit="return confirm('Programmer l\'annulation à la fin de la période en cours ? L\'accès reste actif jusqu\'au @sub.CurrentPeriodEnd?.ToString("g").');">
+                          onsubmit="return confirm('Programmer l\'annulation à la fin de la période ? L\'accès reste actif jusqu\'au @sub.CurrentPeriodEnd?.ToString("g").');">
                         <button type="submit" class="btn btn-warning w-100">
-                            Programmer l'annulation (fin de période)
+                            Annuler (fin de période)
                         </button>
                     </form>
                     <p class="small text-muted mb-0">
-                        Stripe arrêtera le renouvellement. L'abonnement reste actif jusqu'à
-                        @(sub.CurrentPeriodEnd?.ToString("g") ?? "la fin de période").
+                        L'abonnement reste <strong>actif jusqu'au @(sub.CurrentPeriodEnd?.ToString("g") ?? "fin de période")</strong>, puis se termine.
                     </p>
                 }
 
@@ -258,32 +273,18 @@
                     </form>
                 }
 
-                @if (Model.CanCancelImmediately)
-                {
-                    <hr />
-                    <form method="post" asp-page-handler="CancelNow" asp-route-id="@sub.Id"
-                          onsubmit="return confirm('Annuler IMMÉDIATEMENT cet abonnement ? L\'accès s\'arrête tout de suite.');">
-                        <button type="submit" class="btn btn-outline-danger w-100">
-                            Annuler immédiatement
-                        </button>
-                    </form>
-                }
-
                 @if (Model.CanDeleteLocal)
                 {
                     <hr />
                     <form method="post" asp-page-handler="DeleteLocal" asp-route-id="@sub.Id"
-                          onsubmit="return confirm('Supprimer cet enregistrement local ? Si l\'abonnement n\'existe plus sur Stripe, c\'est l\'action recommandée. Les factures/paiements restent conservés.');">
+                          onsubmit="return confirm('Supprimer cet enregistrement local ? Les factures/paiements restent conservés.');">
                         <button type="submit" class="btn btn-danger w-100">
                             Supprimer l'enregistrement local
                         </button>
                     </form>
-                    <p class="small text-muted mb-0">
-                        À utiliser si Stripe répond « No such subscription ». Les factures et paiements restent en base.
-                    </p>
                 }
 
-                @if (!Model.CanReactivate && !Model.CanScheduleCancel && !Model.CanCancelImmediately && !Model.CanUndoSchedule && !Model.CanDeleteLocal)
+                @if (!Model.CanReactivate && !Model.CanScheduleCancel && !Model.CanUndoSchedule && !Model.CanDeleteLocal)
                 {
                     <p class="text-muted mb-0">Aucune action disponible pour ce statut.</p>
                 }

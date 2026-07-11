@@ -97,7 +97,13 @@
                     <div class="small text-muted">Sync @item.StripeSyncedAt.Value.ToString("g")</div>
                 }
             </td>
-            <td><span class="badge @badge">@item.Status</span></td>
+            <td>
+                <span class="badge @badge">@item.Status</span>
+                @if (item.IsScheduledToEnd)
+                {
+                    <div><span class="badge text-bg-warning">Fin @item.EndsAt?.ToString("d")</span></div>
+                }
+            </td>
             <td><small>@item.Period</small></td>
             <td><small>@item.StripeSubscriptionId</small></td>
             <td class="text-nowrap">

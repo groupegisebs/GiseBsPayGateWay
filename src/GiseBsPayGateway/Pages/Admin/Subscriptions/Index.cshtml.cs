@@ -42,6 +42,8 @@ public class IndexModel : PageModel
         string Currency,
         bool AmountFromStripe,
         string Status,
+        bool IsScheduledToEnd,
+        DateTime? EndsAt,
         string Period,
         string? StripeSubscriptionId,
         bool CancelAtPeriodEnd,
@@ -107,11 +109,17 @@ public class IndexModel : PageModel
         Pagination = AdminListPagination.Create(page, search, totalCount);
         PageNumber = Pagination.Page;
 
-        Subscriptions = await query
+        var rows = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip(Pagination.Skip)
             .Take(AdminListPagination.PageSize)
-            .Select(x => new SubscriptionViewModel(
+            .ToListAsync(cancellationToken);
+
+        Subscriptions = rows.Select(x =>
+        {
+            var effective = SubscriptionLifecycle.GetEffectiveStatus(x);
+            var ending = SubscriptionLifecycle.IsScheduledToEnd(x);
+            return new SubscriptionViewModel(
                 x.Id,
                 x.SubscriptionCode,
                 x.ClientApplication.Name,
@@ -124,13 +132,15 @@ public class IndexModel : PageModel
                 x.StripeAmount ?? x.PricingPlan.Amount,
                 x.StripeCurrency ?? x.PricingPlan.Currency,
                 x.StripeAmount.HasValue,
-                x.Status.ToString(),
+                effective.ToString(),
+                ending,
+                ending ? x.CurrentPeriodEnd : null,
                 x.CurrentPeriodStart.HasValue && x.CurrentPeriodEnd.HasValue
                     ? $"{x.CurrentPeriodStart:g} → {x.CurrentPeriodEnd:g}"
                     : "-",
                 x.StripeSubscriptionId,
-                x.CancelAtPeriodEnd,
-                x.StripeSyncedAt))
-            .ToListAsync(cancellationToken);
+                x.CancelAtPeriodEnd || ending,
+                x.StripeSyncedAt);
+        }).ToList();
     }
 }

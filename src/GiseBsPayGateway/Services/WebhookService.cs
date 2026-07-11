@@ -595,16 +595,6 @@ public class WebhookService : IWebhookService
             return;
         }
 
-        subscription.Status = stripeSubscription.Status switch
-        {
-            "active" => SubscriptionStatus.Active,
-            "past_due" => SubscriptionStatus.PastDue,
-            "canceled" => SubscriptionStatus.Cancelled,
-            "unpaid" => SubscriptionStatus.Unpaid,
-            "trialing" => SubscriptionStatus.Trialing,
-            _ => subscription.Status
-        };
-
         var firstItem = stripeSubscription.Items?.Data?.FirstOrDefault();
         if (firstItem is not null)
         {
@@ -623,12 +613,14 @@ public class WebhookService : IWebhookService
             }
         }
 
-        subscription.CancelAtPeriodEnd = stripeSubscription.CancelAtPeriodEnd;
+        SubscriptionLifecycle.ApplyStripeStatus(
+            subscription,
+            stripeSubscription.Status,
+            stripeSubscription.CancelAtPeriodEnd,
+            stripeSubscription.CanceledAt,
+            subscription.CurrentPeriodEnd);
 
-        if (stripeSubscription.CanceledAt.HasValue)
-        {
-            subscription.CancelledAt = stripeSubscription.CanceledAt;
-        }
+        SubscriptionLifecycle.NormalizeIfPeriodEnded(subscription);
 
         subscription.StripeSyncedAt = DateTime.UtcNow;
         subscription.UpdatedAt = DateTime.UtcNow;

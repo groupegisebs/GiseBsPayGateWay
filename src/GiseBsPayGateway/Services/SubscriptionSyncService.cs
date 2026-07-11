@@ -143,24 +143,6 @@ public class SubscriptionSyncService : ISubscriptionSyncService
 
     private static void ApplyStripeSubscription(SubscriptionEntity subscription, Stripe.Subscription stripeSub)
     {
-        subscription.Status = stripeSub.Status switch
-        {
-            "active" => SubscriptionStatus.Active,
-            "past_due" => SubscriptionStatus.PastDue,
-            "canceled" => SubscriptionStatus.Cancelled,
-            "unpaid" => SubscriptionStatus.Unpaid,
-            "trialing" => SubscriptionStatus.Trialing,
-            "incomplete" => SubscriptionStatus.Incomplete,
-            "incomplete_expired" => SubscriptionStatus.Cancelled,
-            _ => subscription.Status
-        };
-
-        subscription.CancelAtPeriodEnd = stripeSub.CancelAtPeriodEnd;
-        if (stripeSub.CanceledAt.HasValue)
-        {
-            subscription.CancelledAt = stripeSub.CanceledAt;
-        }
-
         var firstItem = stripeSub.Items?.Data?.FirstOrDefault();
         if (firstItem is not null)
         {
@@ -181,6 +163,15 @@ public class SubscriptionSyncService : ISubscriptionSyncService
                 }
             }
         }
+
+        SubscriptionLifecycle.ApplyStripeStatus(
+            subscription,
+            stripeSub.Status,
+            stripeSub.CancelAtPeriodEnd,
+            stripeSub.CanceledAt,
+            subscription.CurrentPeriodEnd);
+
+        SubscriptionLifecycle.NormalizeIfPeriodEnded(subscription);
 
         // Fallback: montant sur la dernière facture si le Price n'a pas UnitAmount (ex. tiered)
         if (subscription.StripeAmount is null && stripeSub.LatestInvoice is not null)
