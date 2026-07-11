@@ -334,9 +334,20 @@ public class PaymentServiceTests
         IStripeService stripe)
     {
         var options = Microsoft.Extensions.Options.Options.Create(new GiseBsPayGateway.Options.CurrencyConversionOptions());
+        var rates = new Mock<IExchangeRateProvider>();
+        rates.Setup(r => r.GetRatesToCadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["cad"] = 1m,
+                ["usd"] = 1.36m,
+                ["eur"] = 1.48m,
+                ["gbp"] = 1.72m,
+                ["chf"] = 1.55m
+            });
+
         return new PricingPlanCurrencyVariantService(
             db,
-            new CurrencyConversionService(options),
+            new CurrencyConversionService(rates.Object),
             stripe,
             Mock.Of<IAuditService>(),
             options,

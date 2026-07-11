@@ -111,7 +111,8 @@ public class PricingPlanCurrencyVariantService : IPricingPlanCurrencyVariantServ
             return existing;
         }
 
-        var convertedAmount = _conversion.Convert(source.Amount, source.Currency, targetCurrency);
+        var convertedAmount = await _conversion.ConvertAsync(
+            source.Amount, source.Currency, targetCurrency, cancellationToken);
         if (convertedAmount < 0.01m)
         {
             throw new InvalidOperationException(

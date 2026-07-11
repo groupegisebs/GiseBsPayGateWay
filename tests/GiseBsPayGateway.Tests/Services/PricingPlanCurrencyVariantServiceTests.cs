@@ -16,11 +16,82 @@ public class CurrencyConversionServiceTests
     [InlineData(136, "cad", "usd", 100)] // 136 CAD / 1.36 = 100 USD
     [InlineData(100, "usd", "cad", 136)] // 100 USD * 1.36 = 136 CAD
     [InlineData(50, "cad", "usd", 36.76)] // 50 / 1.36 ≈ 36.76
-    public void Convert_UtiliseRatesToCad(decimal amount, string from, string to, decimal expected)
+    public async Task ConvertAsync_UtiliseRatesProvider(decimal amount, string from, string to, decimal expected)
     {
-        var sut = new CurrencyConversionService(Microsoft.Extensions.Options.Options.Create(new CurrencyConversionOptions()));
-        var result = sut.Convert(amount, from, to);
+        var rates = new Mock<IExchangeRateProvider>();
+        rates.Setup(r => r.GetRatesToCadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["cad"] = 1m,
+                ["usd"] = 1.36m,
+                ["eur"] = 1.48m,
+                ["gbp"] = 1.72m,
+                ["chf"] = 1.55m
+            });
+
+        var sut = new CurrencyConversionService(rates.Object);
+        var result = await sut.ConvertAsync(amount, from, to);
         Assert.Equal(expected, result);
+    }
+}
+
+public class BankOfCanadaExchangeRateProviderTests
+{
+    [Fact]
+    public async Task GetRatesToCadAsync_ParseReponseBoc()
+    {
+        var json = """
+            {
+              "observations": [
+                {
+                  "d": "2026-07-10",
+                  "FXUSDCAD": { "v": "1.4146" },
+                  "FXEURCAD": { "v": "1.6161" },
+                  "FXGBPCAD": { "v": "1.8970" },
+                  "FXCHFCAD": { "v": "1.7516" }
+                }
+              ]
+            }
+            """;
+
+        var handler = new StubHttpMessageHandler(json);
+        var httpClient = new HttpClient(handler);
+        var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var options = Microsoft.Extensions.Options.Options.Create(new CurrencyConversionOptions
+        {
+            UseLiveRates = true,
+            LiveRatesCacheMinutes = 60,
+            BankOfCanadaUrl = "https://example.test/rates"
+        });
+
+        var sut = new BankOfCanadaExchangeRateProvider(
+            httpClient,
+            cache,
+            options,
+            Mock.Of<ILogger<BankOfCanadaExchangeRateProvider>>());
+
+        var rates = await sut.GetRatesToCadAsync();
+
+        Assert.Equal(1m, rates["cad"]);
+        Assert.Equal(1.4146m, rates["usd"]);
+        Assert.Equal(1.6161m, rates["eur"]);
+        Assert.Equal(1.8970m, rates["gbp"]);
+        Assert.Equal(1.7516m, rates["chf"]);
+    }
+
+    private sealed class StubHttpMessageHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage
+            {
+                StatusCode = System.Net.HttpStatusCode.OK,
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
+        }
     }
 }
 
@@ -129,9 +200,20 @@ public class PricingPlanCurrencyVariantServiceTests
         IStripeService stripe)
     {
         var options = Microsoft.Extensions.Options.Options.Create(new CurrencyConversionOptions());
+        var rates = new Mock<IExchangeRateProvider>();
+        rates.Setup(r => r.GetRatesToCadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["cad"] = 1m,
+                ["usd"] = 1.36m,
+                ["eur"] = 1.48m,
+                ["gbp"] = 1.72m,
+                ["chf"] = 1.55m
+            });
+
         return new PricingPlanCurrencyVariantService(
             db,
-            new CurrencyConversionService(options),
+            new CurrencyConversionService(rates.Object),
             stripe,
             Mock.Of<IAuditService>(),
             options,

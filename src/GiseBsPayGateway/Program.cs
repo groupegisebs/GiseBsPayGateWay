@@ -121,6 +121,11 @@ builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IStripePaymentDetailsService, StripePaymentDetailsService>();
 builder.Services.Configure<GiseBsPayGateway.Options.CurrencyConversionOptions>(
     builder.Configuration.GetSection(GiseBsPayGateway.Options.CurrencyConversionOptions.SectionName));
+builder.Services.AddHttpClient<IExchangeRateProvider, BankOfCanadaExchangeRateProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("GiseBsPayGateway/1.0");
+});
 builder.Services.AddScoped<ICurrencyConversionService, CurrencyConversionService>();
 builder.Services.AddScoped<IPricingPlanCurrencyVariantService, PricingPlanCurrencyVariantService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
