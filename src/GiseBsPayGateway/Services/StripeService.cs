@@ -69,18 +69,37 @@ public class StripeService : IStripeService
     {
         await ConfigureStripeAsync(cancellationToken);
 
+        var expectedCurrency = plan.Currency.Trim().ToLowerInvariant();
+        var expectedAmount = (long)(plan.Amount * 100);
+
         if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
         {
-            await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
-            return plan.StripePriceId;
+            var existing = await GetStripePriceAsync(plan.StripePriceId, cancellationToken);
+            if (existing is not null &&
+                string.Equals(existing.Currency, expectedCurrency, StringComparison.OrdinalIgnoreCase) &&
+                existing.UnitAmount == expectedAmount)
+            {
+                await EnsureStripePriceTaxBehaviorAsync(plan.StripePriceId, cancellationToken);
+                return plan.StripePriceId;
+            }
+
+            _logger.LogWarning(
+                "Price Stripe {StripePriceId} désynchronisé (currency={StripeCurrency}, amount={StripeAmount}) vs plan {PlanCode} ({PlanCurrency}/{PlanAmount}). Recréation.",
+                plan.StripePriceId,
+                existing?.Currency,
+                existing?.UnitAmount,
+                plan.PlanCode,
+                expectedCurrency,
+                expectedAmount);
+            plan.StripePriceId = null;
         }
 
         var service = new PriceService();
         var options = new PriceCreateOptions
         {
             Product = stripeProductId,
-            UnitAmount = (long)(plan.Amount * 100),
-            Currency = plan.Currency.ToLowerInvariant(),
+            UnitAmount = expectedAmount,
+            Currency = expectedCurrency,
             TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive,
             Metadata = new Dictionary<string, string>
             {
@@ -147,6 +166,9 @@ public class StripeService : IStripeService
         var stripePriceId = await EnsureStripePriceAsync(plan, stripeProductId, cancellationToken);
         var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken)
             ?? throw new InvalidOperationException("Impossible de créer ou récupérer le client Stripe.");
+
+        var planCurrency = plan.Currency.Trim().ToLowerInvariant();
+        await EnsureCustomerCurrencyCompatibleAsync(stripeCustomerId, planCurrency, cancellationToken);
 
         var hasPrefilledBillingAddress = billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1);
         if (hasPrefilledBillingAddress)
@@ -218,9 +240,20 @@ public class StripeService : IStripeService
                 options.SubscriptionData.TrialPeriodDays = trialDays.Value;
         }
 
-        var session = await sessionService.CreateAsync(options, cancellationToken: cancellationToken);
-        _logger.LogInformation("Session Stripe créée {SessionId} pour paiement {PaymentCode} (embedded={Embedded})", session.Id, payment.PaymentCode, embedded);
-        return (session.Id, session.Url, session.ClientSecret);
+        try
+        {
+            var session = await sessionService.CreateAsync(options, cancellationToken: cancellationToken);
+            _logger.LogInformation(
+                "Session Stripe créée {SessionId} pour paiement {PaymentCode} (currency={Currency}, embedded={Embedded})",
+                session.Id, payment.PaymentCode, planCurrency, embedded);
+            return (session.Id, session.Url, session.ClientSecret);
+        }
+        catch (StripeException ex) when (IsCurrencyConflict(ex))
+        {
+            throw new InvalidOperationException(
+                BuildCurrencyConflictMessage(planCurrency, customerCurrency: null),
+                ex);
+        }
     }
 
     private static string AppendQuery(string url, string query)
@@ -278,6 +311,55 @@ public class StripeService : IStripeService
         {
             TaxBehavior = StripeTaxDefaults.PriceTaxBehaviorExclusive
         }, cancellationToken: cancellationToken);
+    }
+
+    private static async Task<Price?> GetStripePriceAsync(string stripePriceId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var service = new PriceService();
+            return await service.GetAsync(stripePriceId, cancellationToken: cancellationToken);
+        }
+        catch (StripeException)
+        {
+            return null;
+        }
+    }
+
+    private async Task EnsureCustomerCurrencyCompatibleAsync(
+        string stripeCustomerId,
+        string planCurrency,
+        CancellationToken cancellationToken)
+    {
+        var customerService = new CustomerService();
+        var stripeCustomer = await customerService.GetAsync(stripeCustomerId, cancellationToken: cancellationToken);
+        var lockedCurrency = stripeCustomer.Currency?.Trim().ToLowerInvariant();
+
+        if (string.IsNullOrWhiteSpace(lockedCurrency) ||
+            string.Equals(lockedCurrency, planCurrency, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(BuildCurrencyConflictMessage(planCurrency, lockedCurrency));
+    }
+
+    private static bool IsCurrencyConflict(StripeException ex)
+    {
+        var message = ex.StripeError?.Message ?? ex.Message;
+        return message.Contains("combine currencies", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("cannot combine currencies", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildCurrencyConflictMessage(string planCurrency, string? customerCurrency)
+    {
+        var locked = string.IsNullOrWhiteSpace(customerCurrency) ? "une autre devise" : customerCurrency.ToUpperInvariant();
+        return
+            $"Ce client Stripe est déjà lié à la devise {locked}. " +
+            $"Le plan demandé est en {planCurrency.ToUpperInvariant()}. " +
+            "Stripe n'autorise qu'une seule devise par client tant qu'un abonnement, " +
+            "une session Checkout ouverte ou un élément de facture est actif. " +
+            "Utilisez un plan dans la même devise, ou un autre customer Stripe.";
     }
 
     public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)
