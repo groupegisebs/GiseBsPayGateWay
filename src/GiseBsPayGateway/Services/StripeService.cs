@@ -433,4 +433,14 @@ public class StripeService : IStripeService
             }, cancellationToken: cancellationToken);
         }
     }
+
+    public async Task SetCancelAtPeriodEndAsync(string stripeSubscriptionId, bool cancelAtPeriodEnd, CancellationToken cancellationToken = default)
+    {
+        await ConfigureStripeAsync(cancellationToken);
+        var service = new SubscriptionService();
+        await service.UpdateAsync(stripeSubscriptionId, new SubscriptionUpdateOptions
+        {
+            CancelAtPeriodEnd = cancelAtPeriodEnd
+        }, cancellationToken: cancellationToken);
+    }
 }

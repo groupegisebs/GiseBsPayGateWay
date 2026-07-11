@@ -22,7 +22,16 @@ public class IndexModel : PageModel
 
     public IList<SubscriptionViewModel> Subscriptions { get; private set; } = [];
 
-    public record SubscriptionViewModel(string SubscriptionCode, string AppName, string CustomerCode, string PlanCode, string Status, string Period, string? StripeSubscriptionId);
+    public record SubscriptionViewModel(
+        Guid Id,
+        string SubscriptionCode,
+        string AppName,
+        string CustomerCode,
+        string PlanCode,
+        string Status,
+        string Period,
+        string? StripeSubscriptionId,
+        bool CancelAtPeriodEnd);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -54,6 +63,7 @@ public class IndexModel : PageModel
             .Skip(Pagination.Skip)
             .Take(AdminListPagination.PageSize)
             .Select(x => new SubscriptionViewModel(
+                x.Id,
                 x.SubscriptionCode,
                 x.ClientApplication.Name,
                 x.Customer.CustomerCode,
@@ -62,7 +72,8 @@ public class IndexModel : PageModel
                 x.CurrentPeriodStart.HasValue && x.CurrentPeriodEnd.HasValue
                     ? $"{x.CurrentPeriodStart:g} → {x.CurrentPeriodEnd:g}"
                     : "-",
-                x.StripeSubscriptionId))
+                x.StripeSubscriptionId,
+                x.CancelAtPeriodEnd))
             .ToListAsync(cancellationToken);
     }
 }

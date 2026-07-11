@@ -1,0 +1,186 @@
+@page "{id:guid}"
+@model GiseBsPayGateway.Pages.Admin.Subscriptions.DetailsModel
+@using GiseBsPayGateway.Enums
+@{
+    ViewData["Title"] = $"Abonnement {Model.Subscription.SubscriptionCode}";
+    Layout = "_Layout";
+    var sub = Model.Subscription;
+    var statusClass = sub.Status switch
+    {
+        SubscriptionStatus.Active => "text-bg-success",
+        SubscriptionStatus.Trialing => "text-bg-info",
+        SubscriptionStatus.PastDue => "text-bg-warning",
+        SubscriptionStatus.Cancelled => "text-bg-secondary",
+        SubscriptionStatus.Unpaid => "text-bg-danger",
+        _ => "text-bg-secondary"
+    };
+}
+
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+        <h1 class="mb-1">Abonnement <code>@sub.SubscriptionCode</code></h1>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="badge @statusClass">@sub.Status</span>
+            @if (sub.CancelAtPeriodEnd)
+            {
+                <span class="badge text-bg-warning">Annulation programmée fin de période</span>
+            }
+        </div>
+    </div>
+    <a asp-page="./Index" class="btn btn-secondary">Retour à la liste</a>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header">Détails</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Créé le</dt>
+                    <dd class="col-sm-8">@sub.CreatedAt.ToString("f")</dd>
+                    <dt class="col-sm-4">Période courante</dt>
+                    <dd class="col-sm-8">
+                        @if (sub.CurrentPeriodStart.HasValue && sub.CurrentPeriodEnd.HasValue)
+                        {
+                            <span>@sub.CurrentPeriodStart?.ToString("g") → @sub.CurrentPeriodEnd?.ToString("g")</span>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd>
+                    <dt class="col-sm-4">Annulé le</dt>
+                    <dd class="col-sm-8">@(sub.CancelledAt?.ToString("f") ?? "—")</dd>
+                    <dt class="col-sm-4">Cancel at period end</dt>
+                    <dd class="col-sm-8">@(sub.CancelAtPeriodEnd ? "Oui" : "Non")</dd>
+                    <dt class="col-sm-4">Stripe Subscription</dt>
+                    <dd class="col-sm-8"><code>@(sub.StripeSubscriptionId ?? "—")</code></dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Produit & plan</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Application</dt>
+                    <dd class="col-sm-8">@Model.AppName <small class="text-muted">(@Model.AppCode)</small></dd>
+                    <dt class="col-sm-4">Produit</dt>
+                    <dd class="col-sm-8"><code>@Model.ProductCode</code> — @Model.ProductName</dd>
+                    <dt class="col-sm-4">Plan</dt>
+                    <dd class="col-sm-8"><code>@Model.PlanCode</code> — @Model.PlanName</dd>
+                    <dt class="col-sm-4">Montant plan</dt>
+                    <dd class="col-sm-8"><strong>@Model.PlanAmount.ToString("N2") @Model.PlanCurrency.ToUpper()</strong></dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Paiements liés</div>
+            <div class="card-body p-0">
+                @if (Model.RelatedPayments.Count == 0)
+                {
+                    <p class="p-3 mb-0 text-muted">Aucun paiement lié.</p>
+                }
+                else
+                {
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Code</th>
+                                <th>Montant</th>
+                                <th>Statut</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var p in Model.RelatedPayments)
+                        {
+                            <tr>
+                                <td>@p.CreatedAt.ToString("g")</td>
+                                <td>
+                                    <a asp-page="/Admin/Transactions/Details" asp-route-id="@p.Id"><code>@p.PaymentCode</code></a>
+                                </td>
+                                <td>@p.Amount.ToString("N2") @p.Currency.ToUpper()</td>
+                                <td>@p.Status</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card mb-4">
+            <div class="card-header">Client</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Code</dt>
+                    <dd class="col-sm-8"><code>@Model.CustomerCode</code></dd>
+                    <dt class="col-sm-4">Email</dt>
+                    <dd class="col-sm-8">@Model.CustomerEmail</dd>
+                    <dt class="col-sm-4">Nom</dt>
+                    <dd class="col-sm-8">@(Model.CustomerName ?? "—")</dd>
+                    <dt class="col-sm-4">Stripe Customer</dt>
+                    <dd class="col-sm-8"><code>@(Model.StripeCustomerId ?? "—")</code></dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Actions</div>
+            <div class="card-body d-grid gap-2">
+                @if (Model.CanScheduleCancel)
+                {
+                    <form method="post" asp-page-handler="ScheduleCancel" asp-route-id="@sub.Id"
+                          onsubmit="return confirm('Programmer l\'annulation à la fin de la période en cours ? L\'accès reste actif jusqu\'au @sub.CurrentPeriodEnd?.ToString("g").');">
+                        <button type="submit" class="btn btn-warning w-100">
+                            Programmer l'annulation (fin de période)
+                        </button>
+                    </form>
+                    <p class="small text-muted mb-0">
+                        Stripe arrêtera le renouvellement. L'abonnement reste actif jusqu'à
+                        @(sub.CurrentPeriodEnd?.ToString("g") ?? "la fin de période").
+                    </p>
+                }
+
+                @if (Model.CanUndoSchedule)
+                {
+                    <form method="post" asp-page-handler="UndoSchedule" asp-route-id="@sub.Id"
+                          onsubmit="return confirm('Retirer la programmation d\'annulation ?');">
+                        <button type="submit" class="btn btn-outline-success w-100">
+                            Annuler la programmation
+                        </button>
+                    </form>
+                }
+
+                @if (Model.CanCancelImmediately)
+                {
+                    <hr />
+                    <form method="post" asp-page-handler="CancelNow" asp-route-id="@sub.Id"
+                          onsubmit="return confirm('Annuler IMMÉDIATEMENT cet abonnement ? L\'accès s\'arrête tout de suite.');">
+                        <button type="submit" class="btn btn-outline-danger w-100">
+                            Annuler immédiatement
+                        </button>
+                    </form>
+                }
+
+                @if (!Model.CanScheduleCancel && !Model.CanCancelImmediately && !Model.CanUndoSchedule)
+                {
+                    <p class="text-muted mb-0">Aucune action disponible pour ce statut.</p>
+                }
+            </div>
+        </div>
+    </div>
+</div>

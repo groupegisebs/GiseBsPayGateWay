@@ -1,0 +1,168 @@
+@page "{id:guid}"
+@model GiseBsPayGateway.Pages.Admin.Transactions.DetailsModel
+@using GiseBsPayGateway.Enums
+@{
+    ViewData["Title"] = $"Transaction {Model.Transaction.PaymentCode}";
+    Layout = "_Layout";
+    var tx = Model.Transaction;
+    var statusClass = tx.Status switch
+    {
+        PaymentStatus.Succeeded => "text-bg-success",
+        PaymentStatus.Pending => "text-bg-warning",
+        PaymentStatus.Failed => "text-bg-danger",
+        PaymentStatus.Cancelled => "text-bg-secondary",
+        PaymentStatus.Refunded => "text-bg-info",
+        _ => "text-bg-secondary"
+    };
+}
+
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+@if (TempData["Success"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+        <h1 class="mb-1">Transaction <code>@tx.PaymentCode</code></h1>
+        <span class="badge @statusClass">@tx.Status</span>
+    </div>
+    <div class="d-flex gap-2">
+        <a asp-page="./Index" class="btn btn-secondary">Retour à la liste</a>
+        @if (Model.CanDelete)
+        {
+            <form method="post" asp-page-handler="Delete" asp-route-id="@tx.Id"
+                  onsubmit="return confirm('Supprimer définitivement cette transaction @tx.Status ?');">
+                <button type="submit" class="btn btn-outline-danger">Supprimer</button>
+            </form>
+        }
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header">Paiement</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Créé le</dt>
+                    <dd class="col-sm-8">@tx.CreatedAt.ToString("f")</dd>
+                    <dt class="col-sm-4">Payé le</dt>
+                    <dd class="col-sm-8">@(tx.PaidAt?.ToString("f") ?? "—")</dd>
+                    <dt class="col-sm-4">Montant HT</dt>
+                    <dd class="col-sm-8"><strong>@tx.Amount.ToString("N2") @tx.Currency.ToUpper()</strong></dd>
+                    @if (tx.OriginalAmount.HasValue && !string.IsNullOrWhiteSpace(tx.OriginalCurrency))
+                    {
+                        <dt class="col-sm-4">Montant catalogue</dt>
+                        <dd class="col-sm-8">@tx.OriginalAmount?.ToString("N2") @tx.OriginalCurrency?.ToUpper()
+                            @if (tx.ExchangeRate.HasValue)
+                            {
+                                <span class="text-muted">(taux @tx.ExchangeRate)</span>
+                            }
+                        </dd>
+                    }
+                    <dt class="col-sm-4">Sous-total</dt>
+                    <dd class="col-sm-8">@(tx.AmountSubtotal?.ToString("N2") ?? "—")</dd>
+                    <dt class="col-sm-4">Taxes</dt>
+                    <dd class="col-sm-8">@(tx.TaxAmount?.ToString("N2") ?? "—")</dd>
+                    <dt class="col-sm-4">Total TTC</dt>
+                    <dd class="col-sm-8">@(tx.GrossAmount?.ToString("N2") ?? "—")</dd>
+                    <dt class="col-sm-4">Frais Stripe</dt>
+                    <dd class="col-sm-8">@(tx.StripeFee?.ToString("N2") ?? "—")</dd>
+                    <dt class="col-sm-4">Net</dt>
+                    <dd class="col-sm-8">@(tx.NetAmount?.ToString("N2") ?? "—")</dd>
+                    <dt class="col-sm-4">Facturation</dt>
+                    <dd class="col-sm-8">
+                        @(string.IsNullOrWhiteSpace(tx.BillingCountry) ? "—" : $"{tx.BillingCountry}{(string.IsNullOrWhiteSpace(tx.BillingState) ? "" : " / " + tx.BillingState)}")
+                    </dd>
+                    @if (!string.IsNullOrWhiteSpace(tx.FailureReason))
+                    {
+                        <dt class="col-sm-4">Échec</dt>
+                        <dd class="col-sm-8 text-danger">@tx.FailureReason</dd>
+                    }
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Stripe</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Checkout Session</dt>
+                    <dd class="col-sm-8"><code>@(tx.StripeCheckoutSessionId ?? "—")</code></dd>
+                    <dt class="col-sm-4">Payment Intent</dt>
+                    <dd class="col-sm-8"><code>@(tx.StripePaymentIntentId ?? "—")</code></dd>
+                    <dt class="col-sm-4">Invoice Stripe</dt>
+                    <dd class="col-sm-8"><code>@(tx.StripeInvoiceId ?? "—")</code></dd>
+                    <dt class="col-sm-4">Balance Tx</dt>
+                    <dd class="col-sm-8"><code>@(tx.StripeBalanceTransactionId ?? "—")</code></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card mb-4">
+            <div class="card-header">Application & produit</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Application</dt>
+                    <dd class="col-sm-8">@Model.AppName <small class="text-muted">(@Model.AppCode)</small></dd>
+                    <dt class="col-sm-4">Produit</dt>
+                    <dd class="col-sm-8"><code>@Model.ProductCode</code> — @Model.ProductName</dd>
+                    <dt class="col-sm-4">Plan</dt>
+                    <dd class="col-sm-8"><code>@Model.PlanCode</code> — @Model.PlanName</dd>
+                    <dt class="col-sm-4">Facture GISEBS</dt>
+                    <dd class="col-sm-8">
+                        @if (Model.InvoiceId.HasValue && !string.IsNullOrWhiteSpace(Model.InvoiceCode))
+                        {
+                            <a asp-page="/Admin/Invoices/Details" asp-route-id="@Model.InvoiceId"><code>@Model.InvoiceCode</code></a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd>
+                    <dt class="col-sm-4">Abonnement</dt>
+                    <dd class="col-sm-8">
+                        @if (Model.SubscriptionId.HasValue && !string.IsNullOrWhiteSpace(Model.SubscriptionCode))
+                        {
+                            <a asp-page="/Admin/Subscriptions/Details" asp-route-id="@Model.SubscriptionId"><code>@Model.SubscriptionCode</code></a>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Client</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Code</dt>
+                    <dd class="col-sm-8"><code>@Model.CustomerCode</code></dd>
+                    <dt class="col-sm-4">Email</dt>
+                    <dd class="col-sm-8">@Model.CustomerEmail</dd>
+                    <dt class="col-sm-4">Nom</dt>
+                    <dd class="col-sm-8">@(Model.CustomerName ?? "—")</dd>
+                    <dt class="col-sm-4">Stripe Customer</dt>
+                    <dd class="col-sm-8"><code>@(Model.StripeCustomerId ?? "—")</code></dd>
+                </dl>
+            </div>
+        </div>
+
+        @if (tx.Status == PaymentStatus.Pending)
+        {
+            <div class="alert alert-warning mb-0">
+                <strong>Pending</strong> — session ouverte ou abandonnée. Vous pouvez investiguer les IDs Stripe ci-dessus,
+                puis supprimer cette ligne si le paiement n’a jamais abouti.
+            </div>
+        }
+    </div>
+</div>
