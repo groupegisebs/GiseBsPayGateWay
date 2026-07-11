@@ -48,6 +48,8 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.HasIndex(x => new { x.ClientApplicationId, x.CustomerCode }).IsUnique();
             e.Property(x => x.CustomerCode).HasMaxLength(50);
             e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.FullName).HasMaxLength(200);
+            e.Property(x => x.Phone).HasMaxLength(40);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.Customers).HasForeignKey(x => x.ClientApplicationId);
         });
 

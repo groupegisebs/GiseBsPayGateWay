@@ -443,4 +443,59 @@ public class StripeService : IStripeService
             CancelAtPeriodEnd = cancelAtPeriodEnd
         }, cancellationToken: cancellationToken);
     }
+
+    public async Task<Stripe.Subscription> RecreateSubscriptionAsync(
+        CustomerEntity customer,
+        ProductEntity product,
+        PricingPlan plan,
+        string? previousStripeSubscriptionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await ConfigureStripeAsync(cancellationToken);
+
+        var stripeCustomerId = await GetOrCreateStripeCustomerAsync(customer, cancellationToken)
+            ?? throw new InvalidOperationException("Impossible de créer ou récupérer le client Stripe.");
+
+        var stripeProductId = await EnsureStripeProductAsync(product, cancellationToken);
+        var stripePriceId = await EnsureStripePriceAsync(plan, stripeProductId, cancellationToken);
+
+        var createOptions = new SubscriptionCreateOptions
+        {
+            Customer = stripeCustomerId,
+            Items =
+            [
+                new SubscriptionItemOptions
+                {
+                    Price = stripePriceId
+                }
+            ],
+            PaymentBehavior = "error_if_incomplete",
+            Metadata = new Dictionary<string, string>
+            {
+                ["customer_code"] = customer.CustomerCode,
+                ["reactivated"] = "true"
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(previousStripeSubscriptionId))
+        {
+            createOptions.Metadata["previous_stripe_subscription_id"] = previousStripeSubscriptionId;
+        }
+
+        var service = new SubscriptionService();
+        try
+        {
+            return await service.CreateAsync(createOptions, cancellationToken: cancellationToken);
+        }
+        catch (StripeException ex) when (
+            ex.StripeError?.Code is "resource_missing" or "payment_intent_authentication_failure"
+            || (ex.Message?.Contains("default payment method", StringComparison.OrdinalIgnoreCase) ?? false)
+            || (ex.Message?.Contains("payment method", StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            throw new InvalidOperationException(
+                "Impossible de réactiver automatiquement : le client Stripe n'a pas de moyen de paiement par défaut valide. " +
+                "Le client doit repasser par un checkout pour se réabonner.",
+                ex);
+        }
+    }
 }

@@ -13,7 +13,8 @@ public record SubscriptionSyncResult(
     int Synced,
     int Failed,
     int InvoicesSynced,
-    string? Message);
+    string? Message,
+    bool NotFoundOnStripe = false);
 
 public interface ISubscriptionSyncService
 {
@@ -70,12 +71,14 @@ public class SubscriptionSyncService : ISubscriptionSyncService
         var ids = subscriptionIds.Distinct().ToList();
         var subscriptions = await _db.Subscriptions
             .Include(x => x.ClientApplication)
+            .Include(x => x.Customer)
             .Where(x => ids.Contains(x.Id))
             .ToListAsync(cancellationToken);
 
         var synced = 0;
         var failed = 0;
         var invoicesSynced = 0;
+        var notFoundOnStripe = false;
         var errors = new List<string>();
 
         foreach (var subscription in subscriptions)
@@ -89,6 +92,11 @@ public class SubscriptionSyncService : ISubscriptionSyncService
             catch (Exception ex)
             {
                 failed++;
+                if (IsStripeSubscriptionMissing(ex))
+                {
+                    notFoundOnStripe = true;
+                }
+
                 errors.Add($"{subscription.SubscriptionCode}: {ex.Message}");
                 _logger.LogWarning(ex, "Échec sync Stripe pour {Code}", subscription.SubscriptionCode);
             }
@@ -98,7 +106,7 @@ public class SubscriptionSyncService : ISubscriptionSyncService
             ? $"{synced} abonnement(s) synchronisé(s), {invoicesSynced} facture(s)."
             : $"{synced} OK, {failed} échec(s), {invoicesSynced} facture(s). {string.Join(" | ", errors.Take(3))}";
 
-        return new SubscriptionSyncResult(synced, failed, invoicesSynced, message);
+        return new SubscriptionSyncResult(synced, failed, invoicesSynced, message, notFoundOnStripe);
     }
 
     private async Task<int> SyncOneAsync(SubscriptionEntity subscription, CancellationToken cancellationToken)
@@ -112,11 +120,12 @@ public class SubscriptionSyncService : ISubscriptionSyncService
             subscription.StripeSubscriptionId,
             new SubscriptionGetOptions
             {
-                Expand = ["items.data.price", "latest_invoice"]
+                Expand = ["items.data.price", "latest_invoice", "customer"]
             },
             cancellationToken: cancellationToken);
 
         ApplyStripeSubscription(subscription, stripeSub);
+        await SyncCustomerFromStripeAsync(subscription, stripeSub, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
 
         var invoiceCount = await SyncInvoicesAsync(subscription.StripeSubscriptionId, cancellationToken);
@@ -196,6 +205,50 @@ public class SubscriptionSyncService : ISubscriptionSyncService
         subscription.UpdatedAt = DateTime.UtcNow;
     }
 
+    private async Task SyncCustomerFromStripeAsync(
+        SubscriptionEntity subscription,
+        Stripe.Subscription stripeSub,
+        CancellationToken cancellationToken)
+    {
+        var customer = subscription.Customer;
+        if (customer is null)
+        {
+            customer = await _db.Customers.FirstOrDefaultAsync(x => x.Id == subscription.CustomerId, cancellationToken);
+            if (customer is null)
+            {
+                return;
+            }
+        }
+
+        Stripe.Customer? stripeCustomer = stripeSub.Customer;
+        if (stripeCustomer is null && !string.IsNullOrWhiteSpace(stripeSub.CustomerId))
+        {
+            stripeCustomer = await new CustomerService().GetAsync(stripeSub.CustomerId, cancellationToken: cancellationToken);
+        }
+
+        if (stripeCustomer is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(stripeCustomer.Email))
+        {
+            customer.Email = stripeCustomer.Email.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(stripeCustomer.Name))
+        {
+            customer.FullName = stripeCustomer.Name.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(stripeCustomer.Phone))
+        {
+            customer.Phone = stripeCustomer.Phone.Trim();
+        }
+
+        customer.UpdatedAt = DateTime.UtcNow;
+    }
+
     private async Task<int> SyncInvoicesAsync(string stripeSubscriptionId, CancellationToken cancellationToken)
     {
         var invoiceService = new StripeInvoiceService();
@@ -224,5 +277,18 @@ public class SubscriptionSyncService : ISubscriptionSyncService
         }
 
         return count;
+    }
+
+    private static bool IsStripeSubscriptionMissing(Exception ex)
+    {
+        var message = ex.Message;
+        if (ex is StripeException stripeEx)
+        {
+            if (string.Equals(stripeEx.StripeError?.Code, "resource_missing", StringComparison.OrdinalIgnoreCase))
+                return true;
+            message = stripeEx.StripeError?.Message ?? stripeEx.Message;
+        }
+
+        return message.Contains("No such subscription", StringComparison.OrdinalIgnoreCase);
     }
 }

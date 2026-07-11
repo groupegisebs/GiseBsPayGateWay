@@ -36,6 +36,7 @@ public class DetailsModel : PageModel
     public string CustomerCode { get; private set; } = string.Empty;
     public string CustomerEmail { get; private set; } = string.Empty;
     public string? CustomerName { get; private set; }
+    public string? CustomerPhone { get; private set; }
     public string? StripeCustomerId { get; private set; }
     public string ProductCode { get; private set; } = string.Empty;
     public string ProductName { get; private set; } = string.Empty;
@@ -52,6 +53,8 @@ public class DetailsModel : PageModel
     public bool CanScheduleCancel { get; private set; }
     public bool CanCancelImmediately { get; private set; }
     public bool CanUndoSchedule { get; private set; }
+    public bool CanDeleteLocal { get; private set; } = true;
+    public bool CanReactivate { get; private set; }
 
     public record PaymentHistoryVm(
         DateTime Date,
@@ -77,7 +80,142 @@ public class DetailsModel : PageModel
     public async Task<IActionResult> OnPostRefreshFromStripeAsync(Guid id, CancellationToken cancellationToken)
     {
         var result = await _syncService.RefreshFromStripeAsync(id, cancellationToken);
+        if (result.NotFoundOnStripe)
+        {
+            var deleted = await DeleteLocalSubscriptionAsync(id, "Stripe: abonnement introuvable lors du refresh", cancellationToken);
+            if (deleted)
+            {
+                TempData["Success"] =
+                    "Abonnement introuvable sur Stripe — enregistrement local supprimé.";
+                return RedirectToPage("./Index");
+            }
+        }
+
         TempData[result.Failed > 0 ? "Error" : "Success"] = result.Message;
+        return RedirectToPage(new { id });
+    }
+
+    public async Task<IActionResult> OnPostDeleteLocalAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var deleted = await DeleteLocalSubscriptionAsync(id, "Suppression manuelle admin", cancellationToken);
+        if (!deleted)
+            return NotFound();
+
+        TempData["Success"] = "Abonnement local supprimé.";
+        return RedirectToPage("./Index");
+    }
+
+    public async Task<IActionResult> OnPostReactivateAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var subscription = await _db.Subscriptions
+            .Include(x => x.ClientApplication)
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.PricingPlan)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (subscription is null)
+            return NotFound();
+
+        // Annulation programmée mais encore actif → simplement retirer le flag.
+        if (subscription.CancelAtPeriodEnd
+            && subscription.Status is not SubscriptionStatus.Cancelled)
+        {
+            if (string.IsNullOrWhiteSpace(subscription.StripeSubscriptionId))
+            {
+                TempData["Error"] = "Abonnement Stripe non lié.";
+                return RedirectToPage(new { id });
+            }
+
+            try
+            {
+                await _stripeService.SetCancelAtPeriodEndAsync(
+                    subscription.StripeSubscriptionId, false, cancellationToken);
+                subscription.CancelAtPeriodEnd = false;
+                subscription.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync(cancellationToken);
+
+                await _auditService.LogAsync(
+                    "SubscriptionReactivatedUndoCancel",
+                    nameof(Subscription),
+                    subscription.Id.ToString(),
+                    true,
+                    $"Code={subscription.SubscriptionCode}",
+                    subscription.ClientApplication.AppCode,
+                    userName: User.Identity?.Name);
+
+                TempData["Success"] = "Annulation annulée — l'abonnement reste actif.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Reactivate undo failed for {Code}", subscription.SubscriptionCode);
+                TempData["Error"] = $"Impossible de réactiver : {ex.Message}";
+            }
+
+            return RedirectToPage(new { id });
+        }
+
+        if (subscription.Status is not SubscriptionStatus.Cancelled)
+        {
+            TempData["Error"] = "Seuls les abonnements annulés (ou avec annulation programmée) peuvent être réactivés.";
+            return RedirectToPage(new { id });
+        }
+
+        try
+        {
+            var previousStripeId = subscription.StripeSubscriptionId;
+            var stripeSub = await _stripeService.RecreateSubscriptionAsync(
+                subscription.Customer,
+                subscription.Product,
+                subscription.PricingPlan,
+                previousStripeId,
+                cancellationToken);
+
+            subscription.StripeSubscriptionId = stripeSub.Id;
+            subscription.Status = stripeSub.Status switch
+            {
+                "active" => SubscriptionStatus.Active,
+                "trialing" => SubscriptionStatus.Trialing,
+                "incomplete" => SubscriptionStatus.Incomplete,
+                "past_due" => SubscriptionStatus.PastDue,
+                _ => SubscriptionStatus.Active
+            };
+            subscription.CancelAtPeriodEnd = false;
+            subscription.CancelledAt = null;
+
+            var firstItem = stripeSub.Items?.Data?.FirstOrDefault();
+            if (firstItem is not null)
+            {
+                subscription.CurrentPeriodStart = firstItem.CurrentPeriodStart;
+                subscription.CurrentPeriodEnd = firstItem.CurrentPeriodEnd;
+                if (firstItem.Price?.UnitAmount is long unitAmount)
+                    subscription.StripeAmount = unitAmount / 100m;
+                if (!string.IsNullOrWhiteSpace(firstItem.Price?.Currency))
+                    subscription.StripeCurrency = firstItem.Price.Currency.Trim().ToLowerInvariant();
+            }
+
+            subscription.StripeSyncedAt = DateTime.UtcNow;
+            subscription.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+
+            await _auditService.LogAsync(
+                "SubscriptionReactivated",
+                nameof(Subscription),
+                subscription.Id.ToString(),
+                true,
+                $"Code={subscription.SubscriptionCode}; Previous={previousStripeId}; New={stripeSub.Id}",
+                subscription.ClientApplication.AppCode,
+                userName: User.Identity?.Name);
+
+            TempData["Success"] =
+                $"Abonnement réactivé. Nouvel ID Stripe : {stripeSub.Id} (un abonnement canceled ne peut pas être redémarré — un nouveau a été créé).";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Reactivate failed for {Code}", subscription.SubscriptionCode);
+            TempData["Error"] = $"Réactivation impossible : {ex.Message}";
+        }
+
         return RedirectToPage(new { id });
     }
 
@@ -193,10 +331,87 @@ public class DetailsModel : PageModel
         catch (Exception ex)
         {
             _logger.LogError(ex, "Cancel subscription failed for {Code}", subscription.SubscriptionCode);
+
+            if (IsStripeSubscriptionMissing(ex))
+            {
+                var deleted = await DeleteLocalSubscriptionAsync(
+                    id,
+                    $"Stripe introuvable lors de l'annulation: {subscription.StripeSubscriptionId}",
+                    cancellationToken);
+                if (deleted)
+                {
+                    TempData["Success"] =
+                        "Abonnement introuvable sur Stripe — enregistrement local supprimé.";
+                    return RedirectToPage("./Index");
+                }
+            }
+
             TempData["Error"] = $"Échec annulation Stripe : {ex.Message}";
         }
 
         return RedirectToPage(new { id });
+    }
+
+    private async Task<bool> DeleteLocalSubscriptionAsync(
+        Guid id,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await _db.Subscriptions
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (subscription is null)
+            return false;
+
+        var code = subscription.SubscriptionCode;
+        var appCode = subscription.ClientApplication.AppCode;
+        var stripeId = subscription.StripeSubscriptionId;
+
+        var payments = await _db.PaymentTransactions
+            .Where(x => x.SubscriptionId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var payment in payments)
+        {
+            payment.SubscriptionId = null;
+            payment.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var invoices = await _db.PaymentInvoices
+            .Where(x => x.SubscriptionId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var invoice in invoices)
+        {
+            invoice.SubscriptionId = null;
+            invoice.UpdatedAt = DateTime.UtcNow;
+        }
+
+        _db.Subscriptions.Remove(subscription);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync(
+            "SubscriptionDeletedLocal",
+            nameof(Subscription),
+            id.ToString(),
+            true,
+            $"Code={code}; StripeSub={stripeId}; Reason={reason}",
+            appCode,
+            userName: User.Identity?.Name);
+
+        return true;
+    }
+
+    private static bool IsStripeSubscriptionMissing(Exception ex)
+    {
+        var message = ex.Message;
+        if (ex is Stripe.StripeException stripeEx)
+        {
+            if (string.Equals(stripeEx.StripeError?.Code, "resource_missing", StringComparison.OrdinalIgnoreCase))
+                return true;
+            message = stripeEx.StripeError?.Message ?? stripeEx.Message;
+        }
+
+        return message.Contains("No such subscription", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<bool> LoadAsync(Guid id, CancellationToken cancellationToken)
@@ -217,6 +432,7 @@ public class DetailsModel : PageModel
         CustomerCode = subscription.Customer.CustomerCode;
         CustomerEmail = subscription.Customer.Email;
         CustomerName = subscription.Customer.FullName;
+        CustomerPhone = subscription.Customer.Phone;
         StripeCustomerId = subscription.Customer.StripeCustomerId;
         ProductCode = subscription.Product.ProductCode;
         ProductName = subscription.Product.Name;
@@ -237,6 +453,8 @@ public class DetailsModel : PageModel
         CanScheduleCancel = activeLike && !subscription.CancelAtPeriodEnd;
         CanCancelImmediately = activeLike;
         CanUndoSchedule = activeLike && subscription.CancelAtPeriodEnd;
+        CanReactivate = subscription.Status == SubscriptionStatus.Cancelled
+                        || (activeLike && subscription.CancelAtPeriodEnd);
 
         PaymentHistory = await LoadPaymentHistoryAsync(id, cancellationToken);
 

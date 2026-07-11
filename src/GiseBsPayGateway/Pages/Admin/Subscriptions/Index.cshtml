@@ -65,7 +65,20 @@
                 }
             </td>
             <td>@item.AppName</td>
-            <td><small>@item.CustomerCode</small></td>
+            <td>
+                @if (!string.IsNullOrWhiteSpace(item.CustomerName))
+                {
+                    <div><strong>@item.CustomerName</strong></div>
+                }
+                <div>
+                    <a href="mailto:@item.CustomerEmail">@item.CustomerEmail</a>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(item.CustomerPhone))
+                {
+                    <div><a href="tel:@item.CustomerPhone">@item.CustomerPhone</a></div>
+                }
+                <div><small class="text-muted">@item.CustomerCode</small></div>
+            </td>
             <td>@item.ProductName</td>
             <td><code>@item.PlanCode</code></td>
             <td>

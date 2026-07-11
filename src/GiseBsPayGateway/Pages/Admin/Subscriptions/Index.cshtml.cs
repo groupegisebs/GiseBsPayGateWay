@@ -33,6 +33,9 @@ public class IndexModel : PageModel
         string SubscriptionCode,
         string AppName,
         string CustomerCode,
+        string? CustomerName,
+        string CustomerEmail,
+        string? CustomerPhone,
         string ProductName,
         string PlanCode,
         decimal Amount,
@@ -88,6 +91,9 @@ public class IndexModel : PageModel
                 EF.Functions.ILike(x.SubscriptionCode, $"%{search}%") ||
                 EF.Functions.ILike(x.ClientApplication.Name, $"%{search}%") ||
                 EF.Functions.ILike(x.Customer.CustomerCode, $"%{search}%") ||
+                EF.Functions.ILike(x.Customer.Email, $"%{search}%") ||
+                (x.Customer.FullName != null && EF.Functions.ILike(x.Customer.FullName, $"%{search}%")) ||
+                (x.Customer.Phone != null && EF.Functions.ILike(x.Customer.Phone, $"%{search}%")) ||
                 EF.Functions.ILike(x.Product.Name, $"%{search}%") ||
                 EF.Functions.ILike(x.Product.ProductCode, $"%{search}%") ||
                 EF.Functions.ILike(x.PricingPlan.PlanCode, $"%{search}%") ||
@@ -110,6 +116,9 @@ public class IndexModel : PageModel
                 x.SubscriptionCode,
                 x.ClientApplication.Name,
                 x.Customer.CustomerCode,
+                x.Customer.FullName,
+                x.Customer.Email,
+                x.Customer.Phone,
                 x.Product.Name,
                 x.PricingPlan.PlanCode,
                 x.StripeAmount ?? x.PricingPlan.Amount,
