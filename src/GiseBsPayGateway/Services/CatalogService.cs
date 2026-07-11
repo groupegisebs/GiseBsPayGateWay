@@ -68,11 +68,11 @@ public class CatalogService : ICatalogService
         var currency = CatalogOptions.ResolveCurrency(request.Currency);
 
         if (await _db.PricingPlans.AnyAsync(
-                x => x.ProductId == product.Id && x.PlanCode == planCode && x.IsActive,
+                x => x.ProductId == product.Id && x.PlanCode == planCode && x.Currency == currency && x.IsActive,
                 cancellationToken))
         {
             throw new InvalidOperationException(
-                $"Un plan actif '{planCode}' existe déjà pour le produit '{product.ProductCode}'.");
+                $"Un plan actif '{planCode}' en {currency.ToUpperInvariant()} existe déjà pour le produit '{product.ProductCode}'.");
         }
 
         var plan = new PricingPlan
@@ -133,14 +133,15 @@ public class CatalogService : ICatalogService
             throw new InvalidOperationException($"Le produit '{productCode}' existe mais est inactif.");
         }
 
-        var existingPlan = product.PricingPlans.FirstOrDefault(x => x.PlanCode == planCode && x.IsActive);
+        var currency = CatalogOptions.ResolveCurrency(request.Currency);
+
+        var existingPlan = product.PricingPlans.FirstOrDefault(x =>
+            x.PlanCode == planCode && x.Currency == currency && x.IsActive);
         if (existingPlan is not null)
         {
             throw new InvalidOperationException(
-                $"Le catalogue '{productCode}/{planCode}' existe déjà. Utilisez un autre code plan ou désactivez l'ancien plan.");
+                $"Le catalogue '{productCode}/{planCode}' en {currency.ToUpperInvariant()} existe déjà. Utilisez une autre devise ou désactivez l'ancien plan.");
         }
-
-        var currency = CatalogOptions.ResolveCurrency(request.Currency);
 
         var plan = new PricingPlan
         {

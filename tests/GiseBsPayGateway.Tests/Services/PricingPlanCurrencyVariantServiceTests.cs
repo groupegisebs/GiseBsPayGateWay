@@ -1,0 +1,140 @@
+using GiseBsPayGateway.Entities;
+using GiseBsPayGateway.Enums;
+using GiseBsPayGateway.Options;
+using GiseBsPayGateway.Services;
+using GiseBsPayGateway.Tests.Infrastructure;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Moq;
+
+namespace GiseBsPayGateway.Tests.Services;
+
+public class CurrencyConversionServiceTests
+{
+    [Theory]
+    [InlineData(100, "cad", "cad", 100)]
+    [InlineData(136, "cad", "usd", 100)] // 136 CAD / 1.36 = 100 USD
+    [InlineData(100, "usd", "cad", 136)] // 100 USD * 1.36 = 136 CAD
+    [InlineData(50, "cad", "usd", 36.76)] // 50 / 1.36 ≈ 36.76
+    public void Convert_UtiliseRatesToCad(decimal amount, string from, string to, decimal expected)
+    {
+        var sut = new CurrencyConversionService(Microsoft.Extensions.Options.Options.Create(new CurrencyConversionOptions()));
+        var result = sut.Convert(amount, from, to);
+        Assert.Equal(expected, result);
+    }
+}
+
+public class PricingPlanCurrencyVariantServiceTests
+{
+    [Fact]
+    public async Task ResolveForCheckout_SansDeviseVerrouillee_RetournePlanExistant()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(ResolveForCheckout_SansDeviseVerrouillee_RetournePlanExistant));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var (product, plan) = await SeedCadPlanAsync(db, app);
+
+        var sut = CreateSut(db, Mock.Of<IStripeService>());
+        var result = await sut.ResolveForCheckoutAsync(product, "MONTHLY", lockedCurrency: null);
+
+        Assert.Equal(plan.Id, result.Id);
+        Assert.Equal("cad", result.Currency);
+    }
+
+    [Fact]
+    public async Task ResolveForCheckout_DeviseVerrouilleeExistante_RetournePlanMatching()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(ResolveForCheckout_DeviseVerrouilleeExistante_RetournePlanMatching));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var (product, _) = await SeedCadPlanAsync(db, app);
+        var usdPlan = new PricingPlan
+        {
+            ProductId = product.Id,
+            PlanCode = "MONTHLY",
+            Name = "Mensuel USD",
+            Amount = 36.76m,
+            Currency = "usd",
+            BillingInterval = BillingInterval.Monthly,
+            IsActive = true
+        };
+        db.PricingPlans.Add(usdPlan);
+        await db.SaveChangesAsync();
+        product.PricingPlans.Add(usdPlan);
+
+        var sut = CreateSut(db, Mock.Of<IStripeService>());
+        var result = await sut.ResolveForCheckoutAsync(product, "MONTHLY", "usd");
+
+        Assert.Equal(usdPlan.Id, result.Id);
+    }
+
+    [Fact]
+    public async Task ResolveForCheckout_DeviseAbsente_CreeVarianteEtPriceStripe()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(ResolveForCheckout_DeviseAbsente_CreeVarianteEtPriceStripe));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        var (product, cadPlan) = await SeedCadPlanAsync(db, app, amount: 50m);
+
+        var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.EnsureStripeProductAsync(product, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("prod_test");
+        stripe.Setup(s => s.EnsureStripePriceAsync(It.IsAny<PricingPlan>(), "prod_test", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("price_usd_auto");
+
+        var sut = CreateSut(db, stripe.Object);
+        var result = await sut.ResolveForCheckoutAsync(product, "MONTHLY", "usd");
+
+        Assert.NotEqual(cadPlan.Id, result.Id);
+        Assert.Equal("usd", result.Currency);
+        Assert.Equal(36.76m, result.Amount); // 50 CAD / 1.36
+        Assert.Equal("price_usd_auto", result.StripePriceId);
+        Assert.Equal(2, db.PricingPlans.Count(x => x.ProductId == product.Id && x.IsActive));
+        stripe.Verify(s => s.EnsureStripePriceAsync(
+            It.Is<PricingPlan>(p => p.Currency == "usd" && p.Amount == 36.76m),
+            "prod_test",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static async Task<(Product Product, PricingPlan Plan)> SeedCadPlanAsync(
+        Data.ApplicationDbContext db,
+        ClientApplication app,
+        decimal amount = 50m)
+    {
+        var product = new Product
+        {
+            ClientApplicationId = app.Id,
+            ProductCode = "COMPTA-DOC",
+            Name = "Compta doc",
+            IsActive = true
+        };
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+
+        var plan = new PricingPlan
+        {
+            ProductId = product.Id,
+            PlanCode = "MONTHLY",
+            Name = "Mensuel",
+            Amount = amount,
+            Currency = "cad",
+            BillingInterval = BillingInterval.Monthly,
+            IsActive = true
+        };
+        db.PricingPlans.Add(plan);
+        await db.SaveChangesAsync();
+        product.PricingPlans.Add(plan);
+        return (product, plan);
+    }
+
+    private static PricingPlanCurrencyVariantService CreateSut(
+        Data.ApplicationDbContext db,
+        IStripeService stripe)
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new CurrencyConversionOptions());
+        return new PricingPlanCurrencyVariantService(
+            db,
+            new CurrencyConversionService(options),
+            stripe,
+            Mock.Of<IAuditService>(),
+            options,
+            Mock.Of<ILogger<PricingPlanCurrencyVariantService>>());
+    }
+}

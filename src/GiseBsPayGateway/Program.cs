@@ -119,6 +119,10 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IStripeSettingsProvider, StripeSettingsProvider>();
 builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IStripePaymentDetailsService, StripePaymentDetailsService>();
+builder.Services.Configure<GiseBsPayGateway.Options.CurrencyConversionOptions>(
+    builder.Configuration.GetSection(GiseBsPayGateway.Options.CurrencyConversionOptions.SectionName));
+builder.Services.AddScoped<ICurrencyConversionService, CurrencyConversionService>();
+builder.Services.AddScoped<IPricingPlanCurrencyVariantService, PricingPlanCurrencyVariantService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();

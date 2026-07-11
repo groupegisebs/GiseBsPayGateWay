@@ -24,7 +24,7 @@ public class StripeCheckoutTaxOptionsTests
             customerUpdate: null);
 
         Assert.Equal(StripeCheckoutTaxOptions.BillingAddressRequired, collection);
-        Assert.Null(update);
+        Assert.Equal(StripeCheckoutTaxOptions.BillingAddressAuto, update);
     }
 
     [Fact]

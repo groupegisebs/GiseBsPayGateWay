@@ -40,6 +40,10 @@ public class PayGatewayWebApplicationFactory : WebApplicationFactory<Program>
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
                     It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(("cs_test_integration", "https://checkout.stripe.com/test", "cs_secret_integration"));
+            stripe.Setup(s => s.GetOrCreateStripeCustomerAsync(It.IsAny<Entities.Customer>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string?)null);
+            stripe.Setup(s => s.GetCustomerLockedCurrencyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string?)null);
 
             services.RemoveAll<IStripeService>();
             services.AddSingleton(stripe.Object);

@@ -17,6 +17,8 @@ public class PaymentService : IPaymentService
     private readonly IInvoiceLinkBuilder _invoiceLinkBuilder;
     private readonly ICollectedTaxService _collectedTaxService;
 
+    private readonly IPricingPlanCurrencyVariantService _planCurrencyVariant;
+
     public PaymentService(
         ApplicationDbContext db,
         IStripeService stripeService,
@@ -24,7 +26,8 @@ public class PaymentService : IPaymentService
         IAuditService auditService,
         IInvoiceService invoiceService,
         IInvoiceLinkBuilder invoiceLinkBuilder,
-        ICollectedTaxService collectedTaxService)
+        ICollectedTaxService collectedTaxService,
+        IPricingPlanCurrencyVariantService planCurrencyVariant)
     {
         _db = db;
         _stripeService = stripeService;
@@ -33,6 +36,7 @@ public class PaymentService : IPaymentService
         _invoiceService = invoiceService;
         _invoiceLinkBuilder = invoiceLinkBuilder;
         _collectedTaxService = collectedTaxService;
+        _planCurrencyVariant = planCurrencyVariant;
     }
 
     public async Task<CheckoutSessionResponse> CreateCheckoutSessionAsync(ClientApplication app, CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default)
@@ -42,8 +46,10 @@ public class PaymentService : IPaymentService
             .FirstOrDefaultAsync(x => x.ClientApplicationId == app.Id && x.ProductCode == request.ProductCode && x.IsActive, cancellationToken)
             ?? throw new InvalidOperationException($"Produit '{request.ProductCode}' introuvable.");
 
-        var plan = product.PricingPlans.FirstOrDefault(x => x.PlanCode == request.PlanCode && x.IsActive)
-            ?? throw new InvalidOperationException($"Plan '{request.PlanCode}' introuvable.");
+        if (!product.PricingPlans.Any(x => x.PlanCode == request.PlanCode && x.IsActive))
+        {
+            throw new InvalidOperationException($"Plan '{request.PlanCode}' introuvable.");
+        }
 
         var customer = await _db.Customers
             .FirstOrDefaultAsync(x => x.ClientApplicationId == app.Id && x.CustomerCode == request.CustomerCode, cancellationToken);
@@ -69,6 +75,14 @@ public class PaymentService : IPaymentService
             customer.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
         }
+
+        var stripeCustomerId = await _stripeService.GetOrCreateStripeCustomerAsync(customer, cancellationToken);
+        var lockedCurrency = string.IsNullOrWhiteSpace(stripeCustomerId)
+            ? null
+            : await _stripeService.GetCustomerLockedCurrencyAsync(stripeCustomerId, cancellationToken);
+
+        var plan = await _planCurrencyVariant.ResolveForCheckoutAsync(
+            product, request.PlanCode, lockedCurrency, cancellationToken);
 
         var paymentCode = $"PAY-{app.AppCode.ToUpperInvariant()}-{Guid.NewGuid():N}"[..32];
         var payment = new PaymentTransaction

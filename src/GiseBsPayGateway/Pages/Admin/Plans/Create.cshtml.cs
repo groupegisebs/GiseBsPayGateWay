@@ -110,11 +110,14 @@ public class CreateModel : PageModel
         }
 
         if (await _db.PricingPlans.AnyAsync(
-                x => x.ProductId == Input.ProductId && x.PlanCode == planOption.Code && x.IsActive,
+                x => x.ProductId == Input.ProductId
+                     && x.PlanCode == planOption.Code
+                     && x.Currency == Input.Currency
+                     && x.IsActive,
                 cancellationToken))
         {
             ModelState.AddModelError(nameof(Input.PlanCode),
-                "Un plan actif avec ce code existe déjà pour ce produit. Désactivez-le avant d'en créer un nouveau avec le même code.");
+                "Un plan actif avec ce code et cette devise existe déjà pour ce produit. Désactivez-le avant d'en créer un nouveau.");
             return Page();
         }
 

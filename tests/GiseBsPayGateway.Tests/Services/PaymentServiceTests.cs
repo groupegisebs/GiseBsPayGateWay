@@ -87,6 +87,8 @@ public class PaymentServiceTests
         await TestDbContextFactory.SeedProductPlanAsync(db, app);
 
         var stripe = new Mock<IStripeService>();
+        stripe.Setup(s => s.GetOrCreateStripeCustomerAsync(It.IsAny<Customer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), true,
@@ -104,7 +106,8 @@ public class PaymentServiceTests
             Mock.Of<IAuditService>(),
             Mock.Of<IInvoiceService>(),
             Mock.Of<IInvoiceLinkBuilder>(),
-            Mock.Of<ICollectedTaxService>());
+            Mock.Of<ICollectedTaxService>(),
+            CreateVariantService(db, stripe.Object));
 
         var result = await sut.CreateCheckoutSessionAsync(app, CreateCheckoutRequest(embedded: true));
 
@@ -292,6 +295,11 @@ public class PaymentServiceTests
         ApplicationDbContext db,
         Mock<IStripeService> stripe)
     {
+        stripe.Setup(s => s.GetOrCreateStripeCustomerAsync(It.IsAny<Customer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+        stripe.Setup(s => s.GetCustomerLockedCurrencyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
         var settings = new Mock<IStripeSettingsProvider>();
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new StripeSettingsSnapshot("pk_test", "sk_test", "whsec", false, false));
@@ -317,7 +325,22 @@ public class PaymentServiceTests
             Mock.Of<IAuditService>(),
             invoiceService.Object,
             invoiceLinks.Object,
-            collectedTax.Object);
+            collectedTax.Object,
+            CreateVariantService(db, stripe.Object));
+    }
+
+    private static IPricingPlanCurrencyVariantService CreateVariantService(
+        ApplicationDbContext db,
+        IStripeService stripe)
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new GiseBsPayGateway.Options.CurrencyConversionOptions());
+        return new PricingPlanCurrencyVariantService(
+            db,
+            new CurrencyConversionService(options),
+            stripe,
+            Mock.Of<IAuditService>(),
+            options,
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<PricingPlanCurrencyVariantService>>());
     }
 
     private static CreateCheckoutSessionRequest CreateCheckoutRequest(

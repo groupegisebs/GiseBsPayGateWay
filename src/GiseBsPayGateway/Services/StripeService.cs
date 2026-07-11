@@ -148,6 +148,22 @@ public class StripeService : IStripeService
         return stripeCustomer.Id;
     }
 
+    public async Task<string?> GetCustomerLockedCurrencyAsync(
+        string stripeCustomerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(stripeCustomerId))
+        {
+            return null;
+        }
+
+        await ConfigureStripeAsync(cancellationToken);
+        var customerService = new CustomerService();
+        var stripeCustomer = await customerService.GetAsync(stripeCustomerId, cancellationToken: cancellationToken);
+        var locked = stripeCustomer.Currency?.Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(locked) ? null : locked;
+    }
+
     public async Task<(string SessionId, string? Url, string? ClientSecret)> CreateCheckoutSessionAsync(
         PaymentTransaction payment,
         CustomerEntity customer,

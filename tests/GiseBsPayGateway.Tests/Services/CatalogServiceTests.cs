@@ -85,6 +85,21 @@ public class CatalogServiceTests
     }
 
     [Fact]
+    public async Task CreatePlanAsync_MemePlanCodeAutreDevise_Autorise()
+    {
+        await using var db = TestDbContextFactory.Create(nameof(CreatePlanAsync_MemePlanCodeAutreDevise_Autorise));
+        var (app, _, _) = await TestDbContextFactory.SeedAppWithApiKeyAsync(db);
+        await TestDbContextFactory.SeedProductPlanAsync(db, app, "P1", "MONTHLY"); // USD
+        var sut = new CatalogService(db, Mock.Of<IStripeService>(), Mock.Of<IAuditService>());
+
+        var result = await sut.CreatePlanAsync(app, "P1", new CreatePricingPlanRequest(
+            "MONTHLY", "Mensuel CAD", 30m, "CAD"));
+
+        Assert.Equal("cad", result.Currency);
+        Assert.Equal(2, db.PricingPlans.Count(x => x.IsActive));
+    }
+
+    [Fact]
     public async Task SyncProductToStripeAsync_SynchroniseProduitEtPlans()
     {
         await using var db = TestDbContextFactory.Create(nameof(SyncProductToStripeAsync_SynchroniseProduitEtPlans));

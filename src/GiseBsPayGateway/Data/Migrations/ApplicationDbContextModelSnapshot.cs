@@ -772,7 +772,7 @@ namespace GiseBsPayGateway.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProductId", "PlanCode")
+                    b.HasIndex("ProductId", "PlanCode", "Currency")
                         .IsUnique()
                         .HasFilter("\"IsActive\" = true");
 

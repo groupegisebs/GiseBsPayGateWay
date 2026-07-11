@@ -19,6 +19,8 @@ public interface IStripeService
     Task<(string SessionId, string? Url, string? ClientSecret)> CreateCheckoutSessionAsync(Entities.PaymentTransaction payment, Entities.Customer customer, Entities.PricingPlan plan, string successUrl, string cancelUrl, int? trialDays = null, bool embedded = false, DTOs.BillingAddressDto? billingAddress = null, DTOs.CustomerUpdateDto? customerUpdate = null, CancellationToken cancellationToken = default);
     Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default);
     Task<string?> GetOrCreateStripeCustomerAsync(Entities.Customer customer, CancellationToken cancellationToken = default);
+    /// <summary>Devise verrouillée du customer Stripe (null si pas encore fixée).</summary>
+    Task<string?> GetCustomerLockedCurrencyAsync(string stripeCustomerId, CancellationToken cancellationToken = default);
 }
 
 public interface IPaymentService
