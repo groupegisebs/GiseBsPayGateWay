@@ -610,6 +610,17 @@ public class WebhookService : IWebhookService
         {
             subscription.CurrentPeriodStart = firstItem.CurrentPeriodStart;
             subscription.CurrentPeriodEnd = firstItem.CurrentPeriodEnd;
+
+            var price = firstItem.Price;
+            if (price?.UnitAmount is long unitAmount)
+            {
+                subscription.StripeAmount = unitAmount / 100m;
+            }
+
+            if (!string.IsNullOrWhiteSpace(price?.Currency))
+            {
+                subscription.StripeCurrency = price.Currency.Trim().ToLowerInvariant();
+            }
         }
 
         subscription.CancelAtPeriodEnd = stripeSubscription.CancelAtPeriodEnd;
@@ -619,6 +630,7 @@ public class WebhookService : IWebhookService
             subscription.CancelledAt = stripeSubscription.CanceledAt;
         }
 
+        subscription.StripeSyncedAt = DateTime.UtcNow;
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
     }

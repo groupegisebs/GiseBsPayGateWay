@@ -6,12 +6,31 @@
     Layout = "_Layout";
 }
 
-<h1 class="mb-4">Abonnements</h1>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <h1 class="mb-0">Abonnements</h1>
+    <form method="post" asp-page-handler="RefreshPage"
+          onsubmit="return confirm('Synchroniser tous les abonnements de cette page depuis Stripe ?');">
+        <input type="hidden" name="PageNumber" value="@Model.PageNumber" />
+        <input type="hidden" name="Search" value="@Model.Search" />
+        <button type="submit" class="btn btn-outline-primary">
+            Actualiser depuis Stripe
+        </button>
+    </form>
+</div>
 
 @if (TempData["Success"] is string ok)
 {
     <div class="alert alert-success">@ok</div>
 }
+@if (TempData["Error"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<p class="text-muted small mb-3">
+    Le montant affiché est celui de Stripe (Price) après synchronisation.
+    Cliquez sur <strong>Actualiser</strong> pour récupérer statut, période, montant et factures.
+</p>
 
 <partial name="_AdminListToolbar" model="Model.Pagination" />
 
@@ -21,7 +40,9 @@
             <th>Code</th>
             <th>Application</th>
             <th>Client</th>
+            <th>Produit</th>
             <th>Plan</th>
+            <th>Montant Stripe</th>
             <th>Statut</th>
             <th>Période</th>
             <th>Stripe Sub ID</th>
@@ -45,14 +66,42 @@
             </td>
             <td>@item.AppName</td>
             <td><small>@item.CustomerCode</small></td>
-            <td>@item.PlanCode</td>
-            <td><span class="badge @badge">@item.Status</span></td>
-            <td>@item.Period</td>
-            <td><small>@item.StripeSubscriptionId</small></td>
+            <td>@item.ProductName</td>
+            <td><code>@item.PlanCode</code></td>
             <td>
+                <strong>@item.Amount.ToString("N2")</strong>
+                <span class="text-muted">@item.Currency.ToUpperInvariant()</span>
+                @if (item.AmountFromStripe)
+                {
+                    <div><span class="badge text-bg-info">Stripe</span></div>
+                }
+                else
+                {
+                    <div><span class="badge text-bg-secondary">Plan local</span></div>
+                }
+                @if (item.StripeSyncedAt.HasValue)
+                {
+                    <div class="small text-muted">Sync @item.StripeSyncedAt.Value.ToString("g")</div>
+                }
+            </td>
+            <td><span class="badge @badge">@item.Status</span></td>
+            <td><small>@item.Period</small></td>
+            <td><small>@item.StripeSubscriptionId</small></td>
+            <td class="text-nowrap">
+                <form method="post" asp-page-handler="RefreshOne" class="d-inline">
+                    <input type="hidden" name="id" value="@item.Id" />
+                    <input type="hidden" name="PageNumber" value="@Model.PageNumber" />
+                    <input type="hidden" name="Search" value="@Model.Search" />
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Actualiser depuis Stripe">↻</button>
+                </form>
                 <a asp-page="./Details" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">Détails</a>
             </td>
         </tr>
     }
     </tbody>
 </table>
+
+@if (!Model.Subscriptions.Any())
+{
+    <p class="text-muted">Aucun abonnement trouvé.</p>
+}

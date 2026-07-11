@@ -171,6 +171,8 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
         {
             e.HasIndex(x => x.SubscriptionCode).IsUnique();
             e.Property(x => x.SubscriptionCode).HasMaxLength(50);
+            e.Property(x => x.StripeCurrency).HasMaxLength(3);
+            e.Property(x => x.StripeAmount).HasPrecision(18, 2);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.Subscriptions).HasForeignKey(x => x.ClientApplicationId);
             e.HasOne(x => x.Customer).WithMany(x => x.Subscriptions).HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);

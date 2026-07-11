@@ -12,17 +12,20 @@ public class DetailsModel : PageModel
 {
     private readonly ApplicationDbContext _db;
     private readonly IStripeService _stripeService;
+    private readonly ISubscriptionSyncService _syncService;
     private readonly IAuditService _auditService;
     private readonly ILogger<DetailsModel> _logger;
 
     public DetailsModel(
         ApplicationDbContext db,
         IStripeService stripeService,
+        ISubscriptionSyncService syncService,
         IAuditService auditService,
         ILogger<DetailsModel> logger)
     {
         _db = db;
         _stripeService = stripeService;
+        _syncService = syncService;
         _auditService = auditService;
         _logger = logger;
     }
@@ -40,26 +43,42 @@ public class DetailsModel : PageModel
     public string PlanName { get; private set; } = string.Empty;
     public decimal PlanAmount { get; private set; }
     public string PlanCurrency { get; private set; } = "eur";
-    public IList<RelatedPaymentVm> RelatedPayments { get; private set; } = [];
+    public decimal DisplayAmount { get; private set; }
+    public string DisplayCurrency { get; private set; } = "eur";
+    public bool AmountFromStripe { get; private set; }
+    public DateTime? StripeSyncedAt { get; private set; }
+    public IList<PaymentHistoryVm> PaymentHistory { get; private set; } = [];
 
     public bool CanScheduleCancel { get; private set; }
     public bool CanCancelImmediately { get; private set; }
     public bool CanUndoSchedule { get; private set; }
 
-    public record RelatedPaymentVm(
-        Guid Id,
-        string PaymentCode,
-        string Status,
+    public record PaymentHistoryVm(
+        DateTime Date,
+        string Kind,
+        string Reference,
+        string LinkPage,
+        Guid LinkId,
         decimal Amount,
+        decimal? TaxAmount,
+        decimal? GrossAmount,
         string Currency,
-        DateTime CreatedAt,
-        DateTime? PaidAt);
+        string Status,
+        DateTime? PaidAt,
+        string? Period);
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
     {
         if (!await LoadAsync(id, cancellationToken))
             return NotFound();
         return Page();
+    }
+
+    public async Task<IActionResult> OnPostRefreshFromStripeAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _syncService.RefreshFromStripeAsync(id, cancellationToken);
+        TempData[result.Failed > 0 ? "Error" : "Success"] = result.Message;
+        return RedirectToPage(new { id });
     }
 
     public async Task<IActionResult> OnPostScheduleCancelAsync(Guid id, CancellationToken cancellationToken)
@@ -205,6 +224,10 @@ public class DetailsModel : PageModel
         PlanName = subscription.PricingPlan.Name;
         PlanAmount = subscription.PricingPlan.Amount;
         PlanCurrency = subscription.PricingPlan.Currency;
+        AmountFromStripe = subscription.StripeAmount.HasValue;
+        DisplayAmount = subscription.StripeAmount ?? subscription.PricingPlan.Amount;
+        DisplayCurrency = subscription.StripeCurrency ?? subscription.PricingPlan.Currency;
+        StripeSyncedAt = subscription.StripeSyncedAt;
 
         var activeLike = subscription.Status is SubscriptionStatus.Active
             or SubscriptionStatus.Trialing
@@ -215,20 +238,82 @@ public class DetailsModel : PageModel
         CanCancelImmediately = activeLike;
         CanUndoSchedule = activeLike && subscription.CancelAtPeriodEnd;
 
-        RelatedPayments = await _db.PaymentTransactions.AsNoTracking()
-            .Where(x => x.SubscriptionId == id)
-            .OrderByDescending(x => x.CreatedAt)
-            .Take(20)
-            .Select(x => new RelatedPaymentVm(
-                x.Id,
-                x.PaymentCode,
-                x.Status.ToString(),
-                x.Amount,
-                x.Currency,
-                x.CreatedAt,
-                x.PaidAt))
-            .ToListAsync(cancellationToken);
+        PaymentHistory = await LoadPaymentHistoryAsync(id, cancellationToken);
 
         return true;
+    }
+
+    private async Task<IList<PaymentHistoryVm>> LoadPaymentHistoryAsync(
+        Guid subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        var invoices = await _db.PaymentInvoices.AsNoTracking()
+            .Where(x => x.SubscriptionId == subscriptionId)
+            .OrderByDescending(x => x.PaidAt ?? x.InvoiceDate)
+            .Select(x => new PaymentHistoryVm(
+                x.PaidAt ?? x.InvoiceDate,
+                "Facture",
+                x.InvoiceCode,
+                "/Admin/Invoices/Details",
+                x.Id,
+                x.Amount,
+                x.TaxAmount,
+                x.GrossAmount,
+                x.Currency,
+                x.Status.ToString(),
+                x.PaidAt,
+                x.PeriodStart.HasValue && x.PeriodEnd.HasValue
+                    ? $"{x.PeriodStart:d} → {x.PeriodEnd:d}"
+                    : null))
+            .ToListAsync(cancellationToken);
+
+        var invoicePaymentIds = await _db.PaymentInvoices.AsNoTracking()
+            .Where(x => x.SubscriptionId == subscriptionId && x.PaymentTransactionId != null)
+            .Select(x => x.PaymentTransactionId!.Value)
+            .ToListAsync(cancellationToken);
+
+        var payments = await _db.PaymentTransactions.AsNoTracking()
+            .Where(x => x.SubscriptionId == subscriptionId)
+            .OrderByDescending(x => x.PaidAt ?? x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.PaymentCode,
+                x.Status,
+                x.Amount,
+                x.TaxAmount,
+                x.GrossAmount,
+                x.Currency,
+                x.CreatedAt,
+                x.PaidAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var history = new List<PaymentHistoryVm>(invoices);
+        foreach (var payment in payments)
+        {
+            if (invoicePaymentIds.Contains(payment.Id))
+            {
+                continue;
+            }
+
+            history.Add(new PaymentHistoryVm(
+                payment.PaidAt ?? payment.CreatedAt,
+                "Paiement",
+                payment.PaymentCode,
+                "/Admin/Transactions/Details",
+                payment.Id,
+                payment.Amount,
+                payment.TaxAmount,
+                payment.GrossAmount,
+                payment.Currency,
+                payment.Status.ToString(),
+                payment.PaidAt,
+                null));
+        }
+
+        return history
+            .OrderByDescending(x => x.Date)
+            .ToList();
     }
 }

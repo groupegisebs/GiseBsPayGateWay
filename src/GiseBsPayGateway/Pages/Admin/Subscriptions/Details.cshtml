@@ -34,9 +34,20 @@
             {
                 <span class="badge text-bg-warning">Annulation programmée fin de période</span>
             }
+            @if (Model.AmountFromStripe)
+            {
+                <span class="badge text-bg-info">Montant Stripe</span>
+            }
         </div>
     </div>
-    <a asp-page="./Index" class="btn btn-secondary">Retour à la liste</a>
+    <div class="d-flex flex-wrap gap-2">
+        <form method="post" asp-page-handler="RefreshFromStripe" asp-route-id="@sub.Id">
+            <button type="submit" class="btn btn-outline-primary">
+                Actualiser depuis Stripe
+            </button>
+        </form>
+        <a asp-page="./Index" class="btn btn-secondary">Retour à la liste</a>
+    </div>
 </div>
 
 <div class="row">
@@ -78,44 +89,94 @@
                     <dd class="col-sm-8"><code>@Model.ProductCode</code> — @Model.ProductName</dd>
                     <dt class="col-sm-4">Plan</dt>
                     <dd class="col-sm-8"><code>@Model.PlanCode</code> — @Model.PlanName</dd>
-                    <dt class="col-sm-4">Montant plan</dt>
-                    <dd class="col-sm-8"><strong>@Model.PlanAmount.ToString("N2") @Model.PlanCurrency.ToUpper()</strong></dd>
+                    <dt class="col-sm-4">Montant abonnement</dt>
+                    <dd class="col-sm-8">
+                        <strong class="fs-5">@Model.DisplayAmount.ToString("N2") @Model.DisplayCurrency.ToUpperInvariant()</strong>
+                        @if (Model.AmountFromStripe)
+                        {
+                            <span class="badge text-bg-info ms-1">Stripe</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary ms-1">Plan local</span>
+                        }
+                        <div class="small text-muted">
+                            Plan catalogue : @Model.PlanAmount.ToString("N2") @Model.PlanCurrency.ToUpperInvariant()
+                            @if (Model.StripeSyncedAt.HasValue)
+                            {
+                                <span>· Dernière sync Stripe @Model.StripeSyncedAt.Value.ToString("g")</span>
+                            }
+                        </div>
+                    </dd>
                 </dl>
             </div>
         </div>
 
         <div class="card mb-4">
-            <div class="card-header">Paiements liés</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Historique des paiements</span>
+                <span class="badge text-bg-secondary">@Model.PaymentHistory.Count</span>
+            </div>
             <div class="card-body p-0">
-                @if (Model.RelatedPayments.Count == 0)
+                @if (Model.PaymentHistory.Count == 0)
                 {
-                    <p class="p-3 mb-0 text-muted">Aucun paiement lié.</p>
+                    <p class="p-3 mb-0 text-muted">Aucun paiement ou facture enregistré pour cet abonnement.</p>
                 }
                 else
                 {
-                    <table class="table table-sm mb-0">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Code</th>
-                                <th>Montant</th>
-                                <th>Statut</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        @foreach (var p in Model.RelatedPayments)
-                        {
-                            <tr>
-                                <td>@p.CreatedAt.ToString("g")</td>
-                                <td>
-                                    <a asp-page="/Admin/Transactions/Details" asp-route-id="@p.Id"><code>@p.PaymentCode</code></a>
-                                </td>
-                                <td>@p.Amount.ToString("N2") @p.Currency.ToUpper()</td>
-                                <td>@p.Status</td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Référence</th>
+                                    <th>Période</th>
+                                    <th class="text-end">HT</th>
+                                    <th class="text-end">Taxes</th>
+                                    <th class="text-end">Total</th>
+                                    <th>Statut</th>
+                                    <th>Payé le</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var p in Model.PaymentHistory)
+                            {
+                                var total = p.GrossAmount ?? p.Amount;
+                                var ht = p.GrossAmount.HasValue && p.TaxAmount.HasValue
+                                    ? total - p.TaxAmount.Value
+                                    : p.Amount;
+                                var statusBadge = p.Status is "Paid" or "Succeeded" ? "text-bg-success"
+                                    : p.Status is "Failed" ? "text-bg-danger"
+                                    : p.Status is "Pending" or "Open" ? "text-bg-warning"
+                                    : "text-bg-secondary";
+                                <tr>
+                                    <td><small>@p.Date.ToString("g")</small></td>
+                                    <td><span class="badge text-bg-light border">@p.Kind</span></td>
+                                    <td>
+                                        @if (p.Kind == "Facture")
+                                        {
+                                            <a asp-page="/Admin/Invoices/Details" asp-route-id="@p.LinkId"><code>@p.Reference</code></a>
+                                        }
+                                        else
+                                        {
+                                            <a asp-page="/Admin/Transactions/Details" asp-route-id="@p.LinkId"><code>@p.Reference</code></a>
+                                        }
+                                    </td>
+                                    <td><small>@(p.Period ?? "—")</small></td>
+                                    <td class="text-end">@ht.ToString("N2")</td>
+                                    <td class="text-end">@(p.TaxAmount?.ToString("N2") ?? "—")</td>
+                                    <td class="text-end">
+                                        <strong>@total.ToString("N2")</strong>
+                                        <span class="text-muted">@p.Currency.ToUpperInvariant()</span>
+                                    </td>
+                                    <td><span class="badge @statusBadge">@p.Status</span></td>
+                                    <td><small>@(p.PaidAt?.ToString("g") ?? "—")</small></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
                 }
             </div>
         </div>

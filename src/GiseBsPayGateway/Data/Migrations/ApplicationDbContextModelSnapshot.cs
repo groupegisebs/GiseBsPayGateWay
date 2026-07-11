@@ -939,6 +939,17 @@ namespace GiseBsPayGateway.Data.Migrations
                     b.Property<string>("StripeSubscriptionId")
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("StripeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("StripeCurrency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTime?>("StripeSyncedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("SubscriptionCode")
                         .IsRequired()
                         .HasMaxLength(50)

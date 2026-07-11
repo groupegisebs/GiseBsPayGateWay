@@ -128,6 +128,7 @@ builder.Services.AddHttpClient<IExchangeRateProvider, BankOfCanadaExchangeRatePr
 });
 builder.Services.AddScoped<ICurrencyConversionService, CurrencyConversionService>();
 builder.Services.AddScoped<IPricingPlanCurrencyVariantService, PricingPlanCurrencyVariantService>();
+builder.Services.AddScoped<ISubscriptionSyncService, SubscriptionSyncService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
