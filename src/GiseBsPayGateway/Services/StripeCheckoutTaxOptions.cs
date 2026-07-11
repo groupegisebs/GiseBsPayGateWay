@@ -20,7 +20,11 @@ public static class StripeCheckoutTaxOptions
             return (BillingAddressAuto, CustomerUpdateNever);
         }
 
+        // Sans adresse préremplie : collecter l'adresse au checkout et la sauver sur le Customer
+        // (requis par Stripe Automatic Tax).
         var addressUpdate = customerUpdate?.Address?.Trim();
-        return (BillingAddressRequired, string.IsNullOrWhiteSpace(addressUpdate) ? null : addressUpdate);
+        if (string.IsNullOrWhiteSpace(addressUpdate))
+            addressUpdate = BillingAddressAuto;
+        return (BillingAddressRequired, addressUpdate);
     }
 }
