@@ -169,6 +169,7 @@ public class StripeService : IStripeService
 
         var planCurrency = plan.Currency.Trim().ToLowerInvariant();
         await EnsureCustomerCurrencyCompatibleAsync(stripeCustomerId, planCurrency, cancellationToken);
+        await ExpireConflictingOpenCheckoutSessionsAsync(stripeCustomerId, planCurrency, cancellationToken);
 
         var hasPrefilledBillingAddress = billingAddress is not null && !string.IsNullOrWhiteSpace(billingAddress.Line1);
         if (hasPrefilledBillingAddress)
@@ -342,6 +343,43 @@ public class StripeService : IStripeService
         }
 
         throw new InvalidOperationException(BuildCurrencyConflictMessage(planCurrency, lockedCurrency));
+    }
+
+    private async Task ExpireConflictingOpenCheckoutSessionsAsync(
+        string stripeCustomerId,
+        string planCurrency,
+        CancellationToken cancellationToken)
+    {
+        var sessionService = new SessionService();
+        var openSessions = await sessionService.ListAsync(new SessionListOptions
+        {
+            Customer = stripeCustomerId,
+            Status = "open",
+            Limit = 100
+        }, cancellationToken: cancellationToken);
+
+        foreach (var openSession in openSessions)
+        {
+            var sessionCurrency = openSession.Currency?.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(sessionCurrency) ||
+                string.Equals(sessionCurrency, planCurrency, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                await sessionService.ExpireAsync(openSession.Id, cancellationToken: cancellationToken);
+                _logger.LogInformation(
+                    "Session Checkout ouverte {SessionId} expirée (currency={SessionCurrency}) pour permettre {PlanCurrency}",
+                    openSession.Id, sessionCurrency, planCurrency);
+            }
+            catch (StripeException ex)
+            {
+                _logger.LogWarning(ex,
+                    "Impossible d'expirer la session Checkout {SessionId}", openSession.Id);
+            }
+        }
     }
 
     private static bool IsCurrencyConflict(StripeException ex)
