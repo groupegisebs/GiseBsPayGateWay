@@ -77,4 +77,17 @@ Les deux jeux de clés sont dans `/opt/apps/gisebs-pay-gateway/secrets.json` :
 
 Deux endpoints webhook Stripe (live + test) pointent vers la même URL ; le gateway valide la signature avec l’un ou l’autre secret.
 
+### Checklist webhook (souvent incomplet)
+
+1. URL : `https://gisebsapipaygateway.gisebs.com/api/webhooks/stripe`
+2. **Endpoint Test** + **Endpoint Live** (deux `whsec_…` distincts dans `secrets.json`)
+3. Événements cochés au minimum :
+   - `checkout.session.completed` ← indispensable pour enregistrer le paiement
+   - `checkout.session.async_payment_succeeded` / `failed`
+   - `payment_intent.succeeded` / `payment_intent.payment_failed`
+   - `invoice.paid` / `invoice.payment_failed` (pas `invoice_payment.paid`)
+   - `customer.subscription.created` / `updated` / `deleted`
+4. Après paiement test : admin Pay Gateway → **Webhooks** → statut `Processed` (pas `Ignored` / `Failed`)
+5. Si paiement reste **Pending** : déployer le correctif mode Test des webhooks, puis **Renvoyer** `checkout.session.completed` depuis Stripe Workbench
+
 Voir aussi [SERVER-SECRETS.md](./SERVER-SECRETS.md).

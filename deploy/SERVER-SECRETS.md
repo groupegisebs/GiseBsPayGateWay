@@ -117,10 +117,31 @@ sudo systemctl status gisebs-pay-gateway
 1. [dashboard.stripe.com](https://dashboard.stripe.com) → **Développeurs** → **Clés API**
    - Mode **Production** → `Stripe:Live` (`pk_live_` / `sk_live_`)
    - Mode **Test** → `Stripe:Test` (`pk_test_` / `sk_test_`)
-2. **Développeurs** → **Webhooks** → endpoint `https://gisebsapipaygateway.gisebs.com/api/webhooks/stripe`
-   - Un endpoint en mode Live → `Live.WebhookSecret` (`whsec_...`)
-   - Un endpoint en mode Test → `Test.WebhookSecret` (`whsec_...`)
-   - Événements : `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`
+2. **Développeurs** → **Webhooks** → **deux** endpoints (mode **Test** + mode **Live**) vers la même URL :
+   `https://gisebsapipaygateway.gisebs.com/api/webhooks/stripe`
+   - Endpoint **Test** → coller le `whsec_…` dans `Stripe:Test:WebhookSecret`
+   - Endpoint **Live** → coller le `whsec_…` dans `Stripe:Live:WebhookSecret`
+
+### Événements à cocher (obligatoires)
+
+Le gateway ne traite que ces types (les autres répondent **200 Ignored** sans mettre à jour le paiement) :
+
+| Événement Stripe | Rôle |
+|------------------|------|
+| `checkout.session.completed` | **Principal** — marque le paiement Succeeded |
+| `checkout.session.async_payment_succeeded` | Paiements différés (ex. virement) |
+| `checkout.session.async_payment_failed` | Échec paiement différé |
+| `payment_intent.succeeded` | Secours one-shot |
+| `payment_intent.payment_failed` | Échec |
+| `invoice.paid` | Renouvellements d’abonnement |
+| `invoice.payment_failed` | Échec facture |
+| `customer.subscription.created` | Lien abonnement + finalisation |
+| `customer.subscription.updated` | Statut abonnement |
+| `customer.subscription.deleted` | Résiliation |
+
+> **Attention :** `invoice_payment.paid` (avec underscore) **n’est pas** traité. Il faut bien `invoice.paid`. Un 200 sur `invoice_payment.paid` signifie « reçu mais ignoré ».
+
+Dans Stripe Dashboard → endpoint → **Événements** → sélectionner la liste ci-dessus (ou « Select events » / Listen to events).
 
 Les apps clientes envoient `X-Stripe-Env: DEV` uniquement pour les environnements de développement / QA.
 
