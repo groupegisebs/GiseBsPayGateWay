@@ -42,8 +42,23 @@ public class StripeService : IStripeService
 
         if (!string.IsNullOrWhiteSpace(product.StripeProductId))
         {
-            await EnsureStripeProductTaxCodeAsync(product.StripeProductId, cancellationToken);
-            return product.StripeProductId;
+            try
+            {
+                await EnsureStripeProductTaxCodeAsync(product.StripeProductId, cancellationToken);
+                return product.StripeProductId;
+            }
+            catch (StripeException ex) when (IsMissingOrWrongMode(ex))
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Product Stripe {StripeProductId} introuvable dans le mode courant — recréation (productCode={ProductCode})",
+                    product.StripeProductId,
+                    product.ProductCode);
+                product.StripeProductId = null;
+                // Les prix liés à l'ancien produit Live/Test sont invalides dans l'autre mode.
+                foreach (var plan in product.PricingPlans)
+                    plan.StripePriceId = null;
+            }
         }
 
         var service = new ProductService();
@@ -124,13 +139,28 @@ public class StripeService : IStripeService
 
     public async Task<string?> GetOrCreateStripeCustomerAsync(CustomerEntity customer, CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(customer.StripeCustomerId))
-        {
-            return customer.StripeCustomerId;
-        }
-
         await ConfigureStripeAsync(cancellationToken);
         var service = new CustomerService();
+
+        if (!string.IsNullOrWhiteSpace(customer.StripeCustomerId))
+        {
+            try
+            {
+                await service.GetAsync(customer.StripeCustomerId, cancellationToken: cancellationToken);
+                return customer.StripeCustomerId;
+            }
+            catch (StripeException ex) when (IsMissingOrWrongMode(ex))
+            {
+                // IDs cus_… / prod_… / price_… sont séparés entre Live et Test.
+                _logger.LogWarning(
+                    ex,
+                    "Customer Stripe {StripeCustomerId} introuvable dans le mode courant — recréation (customerCode={CustomerCode})",
+                    customer.StripeCustomerId,
+                    customer.CustomerCode);
+                customer.StripeCustomerId = null;
+            }
+        }
+
         var stripeCustomer = await service.CreateAsync(new CustomerCreateOptions
         {
             Email = customer.Email,
@@ -146,6 +176,21 @@ public class StripeService : IStripeService
         customer.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         return stripeCustomer.Id;
+    }
+
+    /// <summary>
+    /// True si l'objet Stripe n'existe pas dans le mode des clés actuelles
+    /// (ex. cus_ live utilisé avec sk_test_, ou inversement).
+    /// </summary>
+    private static bool IsMissingOrWrongMode(StripeException ex)
+    {
+        if (string.Equals(ex.StripeError?.Code, "resource_missing", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var message = ex.Message ?? string.Empty;
+        return message.Contains("No such", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("similar object exists in live mode", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("similar object exists in test mode", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<string?> GetCustomerLockedCurrencyAsync(
