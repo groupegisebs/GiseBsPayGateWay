@@ -116,6 +116,7 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IStripeEnvironmentAccessor, HttpStripeEnvironmentAccessor>();
 builder.Services.AddScoped<IStripeSettingsProvider, StripeSettingsProvider>();
 builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IStripePaymentDetailsService, StripePaymentDetailsService>();

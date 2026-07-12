@@ -50,7 +50,7 @@ public class PayGatewayWebApplicationFactory : WebApplicationFactory<Program>
 
             var settings = new Mock<IStripeSettingsProvider>();
             settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new StripeSettingsSnapshot("pk_test_integration", "sk_test", "whsec_test", false, false));
+                .ReturnsAsync(new StripeSettingsSnapshot("pk_test_integration", "sk_test", "whsec_test", false, false, "DEV"));
 
             services.RemoveAll<IStripeSettingsProvider>();
             services.AddSingleton(settings.Object);

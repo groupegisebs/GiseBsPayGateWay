@@ -38,37 +38,18 @@ public class WebhookService : IWebhookService
 
     public async Task ProcessStripeWebhookAsync(string json, string signatureHeader, CancellationToken cancellationToken = default)
     {
-        var settings = await _stripeSettings.GetActiveAsync(cancellationToken)
-            ?? throw new InvalidOperationException("Stripe non configuré.");
+        var candidates = await _stripeSettings.GetAllConfiguredAsync(cancellationToken);
+        if (candidates.Count == 0)
+            throw new InvalidOperationException("Stripe non configuré.");
+
+        // Les webhooks Stripe n'envoient pas X-Stripe-Env : on essaie live puis test.
+        var (settings, stripeEvent) = ConstructWebhookEvent(json, signatureHeader, candidates);
 
         StripeConfiguration.ApiKey = settings.SecretKey;
-
-        Event stripeEvent;
-        try
-        {
-            // L'endpoint webhook Stripe peut utiliser une api_version antérieure (ex. 2024-06-20)
-            // alors que Stripe.net 52 attend 2026-05-27.dahlia — sans ce flag, ConstructEvent lève
-            // une StripeException (ligne ~167) traitée à tort comme une signature invalide (401).
-            stripeEvent = EventUtility.ConstructEvent(
-                json,
-                signatureHeader,
-                settings.WebhookSecret,
-                throwOnApiVersionMismatch: false);
-        }
-        catch (StripeException ex) when (
-            ex.Message.Contains("signature", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("Stripe-Signature", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("webhook secret", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("timestamp", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning(ex, "Signature webhook Stripe invalide");
-            throw new UnauthorizedAccessException("Signature webhook invalide.");
-        }
-        catch (StripeException ex)
-        {
-            _logger.LogError(ex, "Erreur Stripe lors de la validation du webhook");
-            throw;
-        }
+        _logger.LogInformation(
+            "Webhook Stripe validé (mode {Mode}, live={IsLive})",
+            settings.Mode,
+            settings.IsLiveMode);
 
         if (await _db.StripeWebhookEvents.AnyAsync(x => x.StripeEventId == stripeEvent.Id, cancellationToken))
         {
@@ -869,6 +850,55 @@ public class WebhookService : IWebhookService
             paymentIntentId,
             intentStatus);
         return false;
+    }
+
+    private (StripeSettingsSnapshot Settings, Event StripeEvent) ConstructWebhookEvent(
+        string json,
+        string signatureHeader,
+        IReadOnlyList<StripeSettingsSnapshot> candidates)
+    {
+        StripeException? lastSignatureError = null;
+        StripeException? lastOtherError = null;
+
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.WebhookSecret))
+                continue;
+
+            try
+            {
+                // L'endpoint webhook Stripe peut utiliser une api_version antérieure (ex. 2024-06-20)
+                // alors que Stripe.net 52 attend 2026-05-27.dahlia — sans ce flag, ConstructEvent lève
+                // une StripeException traitée à tort comme une signature invalide (401).
+                var stripeEvent = EventUtility.ConstructEvent(
+                    json,
+                    signatureHeader,
+                    candidate.WebhookSecret,
+                    throwOnApiVersionMismatch: false);
+                return (candidate, stripeEvent);
+            }
+            catch (StripeException ex) when (
+                ex.Message.Contains("signature", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("Stripe-Signature", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("webhook secret", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("timestamp", StringComparison.OrdinalIgnoreCase))
+            {
+                lastSignatureError = ex;
+            }
+            catch (StripeException ex)
+            {
+                lastOtherError = ex;
+            }
+        }
+
+        if (lastOtherError is not null)
+        {
+            _logger.LogError(lastOtherError, "Erreur Stripe lors de la validation du webhook");
+            throw lastOtherError;
+        }
+
+        _logger.LogWarning(lastSignatureError, "Signature webhook Stripe invalide (live et test essayés)");
+        throw new UnauthorizedAccessException("Signature webhook invalide.");
     }
 
     private static string ResolveTransactionReference(string? paymentIntentId, string sessionId) =>

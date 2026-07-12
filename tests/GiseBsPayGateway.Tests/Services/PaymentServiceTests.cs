@@ -97,7 +97,7 @@ public class PaymentServiceTests
 
         var settings = new Mock<IStripeSettingsProvider>();
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new StripeSettingsSnapshot("pk_test_xxx", "sk_test", "whsec", false, false));
+            .ReturnsAsync(new StripeSettingsSnapshot("pk_test_xxx", "sk_test", "whsec", false, false, "DEV"));
 
         var sut = new PaymentService(
             db,
@@ -302,7 +302,7 @@ public class PaymentServiceTests
 
         var settings = new Mock<IStripeSettingsProvider>();
         settings.Setup(s => s.GetActiveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new StripeSettingsSnapshot("pk_test", "sk_test", "whsec", false, false));
+            .ReturnsAsync(new StripeSettingsSnapshot("pk_test", "sk_test", "whsec", false, false, "DEV"));
 
         var invoiceService = new Mock<IInvoiceService>();
         invoiceService.Setup(s => s.GetByPaymentCodeAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

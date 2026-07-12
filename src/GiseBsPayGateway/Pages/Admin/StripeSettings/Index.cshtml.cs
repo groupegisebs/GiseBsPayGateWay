@@ -27,8 +27,11 @@ public class IndexModel : PageModel
     public InputModel Input { get; set; } = new();
 
     public bool IsConfiguredFromServerFile { get; private set; }
+    public bool HasTestSecrets { get; private set; }
     public string? ServerSecretsFilePath { get; private set; }
     public string MaskedPublishableKey { get; private set; } = string.Empty;
+    public string MaskedLivePublishableKey { get; private set; } = string.Empty;
+    public string MaskedTestPublishableKey { get; private set; } = string.Empty;
     public bool IsLiveMode { get; private set; }
 
     public class InputModel
@@ -49,7 +52,17 @@ public class IndexModel : PageModel
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         IsConfiguredFromServerFile = _stripeSettings.IsConfiguredFromServerFile;
+        HasTestSecrets = _stripeSettings.HasTestSecrets;
         ServerSecretsFilePath = ServerSecretsConfiguration.ResolveSecretsFilePath(HttpContext.RequestServices.GetRequiredService<IConfiguration>());
+
+        var all = await _stripeSettings.GetAllConfiguredAsync(cancellationToken);
+        foreach (var item in all)
+        {
+            if (item.IsLiveMode)
+                MaskedLivePublishableKey = MaskKey(item.PublishableKey);
+            else
+                MaskedTestPublishableKey = MaskKey(item.PublishableKey);
+        }
 
         var active = await _stripeSettings.GetActiveAsync(cancellationToken);
         if (active is not null)

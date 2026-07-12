@@ -20,6 +20,10 @@
         {
             <div class="mt-1"><code>@Model.ServerSecretsFilePath</code></div>
         }
+        <ul class="mb-0 mt-2 small">
+            <li>Prod (défaut) : @(string.IsNullOrEmpty(Model.MaskedLivePublishableKey) ? "non configuré" : Model.MaskedLivePublishableKey)</li>
+            <li>Test (<code>X-Stripe-Env: DEV</code>) : @(string.IsNullOrEmpty(Model.MaskedTestPublishableKey) ? "non configuré" : Model.MaskedTestPublishableKey)</li>
+        </ul>
         <div class="mt-2 small">
             Pour modifier les clés Stripe, éditez ce fichier sur le serveur puis :
             <code>sudo systemctl restart gisebs-pay-gateway</code>

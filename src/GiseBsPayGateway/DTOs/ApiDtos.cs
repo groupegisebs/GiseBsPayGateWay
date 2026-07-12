@@ -31,7 +31,8 @@ public record CheckoutSessionResponse(
     string SessionId,
     string Status,
     string? ClientSecret = null,
-    string? PublishableKey = null);
+    string? PublishableKey = null,
+    string StripeMode = "PROD");
 
 public record PaymentResponse(
     string PaymentCode,

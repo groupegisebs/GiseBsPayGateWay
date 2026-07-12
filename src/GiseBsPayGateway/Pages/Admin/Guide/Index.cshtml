@@ -86,6 +86,24 @@ Content-Type: application/json
   "cancelUrl": "https://holotuto.com/payment/cancel"
 }</code></pre>
 
+        <h5 class="mt-4">Mode Stripe DEV (bac à sable)</h5>
+        <p>
+            Par défaut le gateway utilise les secrets <strong>production</strong> (<code>Stripe:Live</code>).
+            Pour utiliser les secrets <strong>test</strong>, ajoutez le header <code>X-Stripe-Env: DEV</code>
+            (équivalent : <code>TEST</code>). Sans ce header → prod.
+        </p>
+        <pre class="bg-light p-3 rounded small"><code>POST @Model.BaseUrl/api/checkout/session
+X-App-Code: HOLOTUTO
+X-Api-Key: gbsk_...
+X-Stripe-Env: DEV
+Content-Type: application/json
+
+{ ... }</code></pre>
+        <p class="small text-muted mb-0">
+            La réponse checkout inclut <code>stripeMode</code> (<code>PROD</code> ou <code>DEV</code>).
+            Configurez <code>Stripe:Live</code> et <code>Stripe:Test</code> dans <code>secrets.json</code> (voir <code>deploy/SERVER-SECRETS.md</code>).
+        </p>
+
         <h5 class="mt-4">Catalogue — créer produit / plan via API</h5>
         <p>Les applications clientes peuvent enregistrer leur catalogue sans passer par l'admin :</p>
         <pre class="bg-light p-3 rounded small"><code>POST @Model.BaseUrl/api/products/catalog

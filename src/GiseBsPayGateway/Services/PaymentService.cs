@@ -138,7 +138,8 @@ public class PaymentService : IPaymentService
             sessionId,
             payment.Status.ToString(),
             clientSecret,
-            request.Embedded ? stripeSettings?.PublishableKey : null);
+            request.Embedded ? stripeSettings?.PublishableKey : null,
+            stripeSettings?.Mode ?? "PROD");
     }
 
     public async Task<PaymentResponse?> GetPaymentByCodeAsync(ClientApplication app, string paymentCode, CancellationToken cancellationToken = default)

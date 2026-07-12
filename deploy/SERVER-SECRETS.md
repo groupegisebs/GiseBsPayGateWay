@@ -51,21 +51,50 @@ Si le dépôt n’est pas sur le serveur, créez le fichier manuellement :
 nano /opt/apps/gisebs-pay-gateway/secrets.json
 ```
 
-Contenu (adapter avec vos vraies clés Stripe **test** pour commencer) :
+Contenu (clés **Live** = prod par défaut ; clés **Test** = si la requête envoie `X-Stripe-Env: DEV`) :
 
 ```json
 {
   "Stripe": {
-    "PublishableKey": "pk_test_...",
-    "SecretKey": "sk_test_...",
-    "WebhookSecret": "whsec_...",
-    "IsLiveMode": false
+    "Live": {
+      "PublishableKey": "pk_live_...",
+      "SecretKey": "sk_live_...",
+      "WebhookSecret": "whsec_..."
+    },
+    "Test": {
+      "PublishableKey": "pk_test_...",
+      "SecretKey": "sk_test_...",
+      "WebhookSecret": "whsec_..."
+    }
   },
   "Jwt": {
     "SecretKey": "votre-cle-jwt-aleatoire-minimum-32-caracteres"
   }
 }
 ```
+
+Compatibilité : l’ancien format plat (`PublishableKey` / `SecretKey` au niveau `Stripe`) reste lu comme **Live**.
+
+### Mode DEV vs PROD (par requête)
+
+| Requête | Secrets utilisés |
+|---------|------------------|
+| Pas de header (ou autre valeur) | **Live** (production) |
+| Header `X-Stripe-Env: DEV` (ou `TEST`) | **Test** (bac à sable) |
+
+Exemple checkout test :
+
+```http
+POST /api/payments/checkout
+X-App-Code: BOUTIQUEGISE
+X-Api-Key: gbsk_...
+X-Stripe-Env: DEV
+Content-Type: application/json
+```
+
+Sans `X-Stripe-Env` → production.
+
+Configurez **deux** endpoints webhook Stripe (live + test) vers la même URL : le gateway essaie les deux secrets de signature.
 
 Sécurisez le fichier :
 
@@ -86,14 +115,14 @@ sudo systemctl status gisebs-pay-gateway
 ## Étape 3 — Où trouver les clés Stripe
 
 1. [dashboard.stripe.com](https://dashboard.stripe.com) → **Développeurs** → **Clés API**
-   - `PublishableKey` → `pk_test_...` ou `pk_live_...`
-   - `SecretKey` → `sk_test_...` ou `sk_live_...`
-2. **Développeurs** → **Webhooks** → votre endpoint :
-   - URL : `https://gisebsapipaygateway.gisebs.com/api/webhooks/stripe`
+   - Mode **Production** → `Stripe:Live` (`pk_live_` / `sk_live_`)
+   - Mode **Test** → `Stripe:Test` (`pk_test_` / `sk_test_`)
+2. **Développeurs** → **Webhooks** → endpoint `https://gisebsapipaygateway.gisebs.com/api/webhooks/stripe`
+   - Un endpoint en mode Live → `Live.WebhookSecret` (`whsec_...`)
+   - Un endpoint en mode Test → `Test.WebhookSecret` (`whsec_...`)
    - Événements : `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`
-   - `WebhookSecret` → `whsec_...` (Signing secret)
 
-Mettez `IsLiveMode: true` uniquement avec des clés `pk_live_` / `sk_live_`.
+Les apps clientes envoient `X-Stripe-Env: DEV` uniquement pour les environnements de développement / QA.
 
 ---
 
