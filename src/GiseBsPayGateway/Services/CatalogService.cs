@@ -128,19 +128,41 @@ public class CatalogService : ICatalogService
             _db.Products.Add(product);
             await _db.SaveChangesAsync(cancellationToken);
         }
-        else if (!product.IsActive)
+        else
         {
-            throw new InvalidOperationException($"Le produit '{productCode}' existe mais est inactif.");
+            if (!product.IsActive)
+                product.IsActive = true;
+
+            product.Name = request.ProductName.Trim();
+            product.Description = request.Description?.Trim();
+            product.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
         }
 
         var currency = CatalogOptions.ResolveCurrency(request.Currency);
 
         var existingPlan = product.PricingPlans.FirstOrDefault(x =>
             x.PlanCode == planCode && x.Currency == currency && x.IsActive);
+
+        if (existingPlan is not null
+            && existingPlan.Amount == request.Amount
+            && existingPlan.BillingInterval == billingInterval
+            && string.Equals(existingPlan.Name, request.PlanName.Trim(), StringComparison.Ordinal))
+        {
+            if (request.SyncToStripe)
+            {
+                await SyncProductToStripeInternalAsync(product, cancellationToken);
+                await SyncPlanToStripeAsync(product, existingPlan, cancellationToken);
+            }
+
+            return new CatalogItemResponse(MapProduct(product, [existingPlan]), MapPlan(existingPlan));
+        }
+
+        // Prix Stripe immuables : désactiver l'ancien plan si montant / intervalle / nom changent.
         if (existingPlan is not null)
         {
-            throw new InvalidOperationException(
-                $"Le catalogue '{productCode}/{planCode}' en {currency.ToUpperInvariant()} existe déjà. Utilisez une autre devise ou désactivez l'ancien plan.");
+            existingPlan.IsActive = false;
+            existingPlan.UpdatedAt = DateTime.UtcNow;
         }
 
         var plan = new PricingPlan
