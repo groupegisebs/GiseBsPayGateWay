@@ -51,6 +51,10 @@ public class WebhookService : IWebhookService
             settings.Mode,
             settings.IsLiveMode);
 
+        // Force GetActiveAsync / StripePaymentDetailsService à utiliser le même mode
+        // (sinon X-Stripe-Env absent → clés Live alors que l'événement est Test).
+        using var stripeModeScope = StripeEnvironmentScope.Begin(useTestMode: !settings.IsLiveMode);
+
         if (await _db.StripeWebhookEvents.AnyAsync(x => x.StripeEventId == stripeEvent.Id, cancellationToken))
         {
             _logger.LogInformation("Événement Stripe déjà traité: {EventId}", stripeEvent.Id);
@@ -131,6 +135,9 @@ public class WebhookService : IWebhookService
         var payment = await LoadPaymentForSessionAsync(session, cancellationToken);
         if (payment is null)
         {
+            _logger.LogWarning(
+                "checkout.session.completed : aucun paiement local pour session {SessionId} (payment_code metadata manquant ou inconnu)",
+                session.Id);
             return;
         }
 
@@ -627,17 +634,40 @@ public class WebhookService : IWebhookService
         Session session,
         CancellationToken cancellationToken)
     {
-        if (!session.Metadata.TryGetValue("payment_code", out var paymentCode))
+        string? paymentCode = null;
+        if (session.Metadata is not null)
+            session.Metadata.TryGetValue("payment_code", out paymentCode);
+
+        if (string.IsNullOrWhiteSpace(paymentCode)
+            && !string.IsNullOrWhiteSpace(session.ClientReferenceId))
         {
+            paymentCode = session.ClientReferenceId;
+        }
+
+        if (string.IsNullOrWhiteSpace(paymentCode))
+        {
+            _logger.LogWarning(
+                "Session Checkout {SessionId} sans payment_code / client_reference_id",
+                session.Id);
             return null;
         }
 
-        return await _db.PaymentTransactions
+        var payment = await _db.PaymentTransactions
             .Include(x => x.PricingPlan)
             .Include(x => x.Customer)
             .Include(x => x.Product)
             .Include(x => x.ClientApplication)
             .FirstOrDefaultAsync(x => x.PaymentCode == paymentCode, cancellationToken);
+
+        if (payment is null)
+        {
+            _logger.LogWarning(
+                "Paiement introuvable pour payment_code={PaymentCode} (session {SessionId})",
+                paymentCode,
+                session.Id);
+        }
+
+        return payment;
     }
 
     private async Task<Entities.PaymentTransaction?> FindPaymentByPaymentIntentAsync(
@@ -875,7 +905,16 @@ public class WebhookService : IWebhookService
                     signatureHeader,
                     candidate.WebhookSecret,
                     throwOnApiVersionMismatch: false);
-                return (candidate, stripeEvent);
+
+                // Évite d'accepter un événement Test avec le secret Live (ou l'inverse) si les deux secrets
+                // sont configurés de façon ambiguë.
+                if (stripeEvent.Livemode == candidate.IsLiveMode)
+                    return (candidate, stripeEvent);
+
+                _logger.LogDebug(
+                    "Signature OK pour mode {Mode} mais Livemode={Livemode} — essai du jeu de clés suivant",
+                    candidate.Mode,
+                    stripeEvent.Livemode);
             }
             catch (StripeException ex) when (
                 ex.Message.Contains("signature", StringComparison.OrdinalIgnoreCase) ||

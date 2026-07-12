@@ -247,6 +247,7 @@ public class StripeService : IStripeService
         {
             Mode = plan.BillingInterval == BillingInterval.OneTime ? "payment" : "subscription",
             Customer = stripeCustomerId,
+            ClientReferenceId = payment.PaymentCode,
             // Stripe Tax : activer dans le Dashboard (Settings → Tax), ajouter les enregistrements fiscaux canadiens (GST/HST/QST).
             AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
             BillingAddressCollection = billingAddressCollection,
