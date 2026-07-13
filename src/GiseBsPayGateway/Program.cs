@@ -142,11 +142,20 @@ builder.Services.AddScoped<IConnectService, ConnectService>();
 builder.Services.AddScoped<ITransferService, ConnectTransferService>();
 builder.Services.Configure<GiseBsPayGateway.Options.PayoutCallbackOptions>(
     builder.Configuration.GetSection(GiseBsPayGateway.Options.PayoutCallbackOptions.SectionName));
+builder.Services.Configure<GiseBsPayGateway.Options.PayPalOptions>(
+    builder.Configuration.GetSection(GiseBsPayGateway.Options.PayPalOptions.SectionName));
 builder.Services.AddHttpClient("PayoutCallback", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.AddHttpClient("PayPal", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddScoped<IPayoutCallbackNotifier, PayoutCallbackNotifier>();
+builder.Services.AddScoped<IPayPalPayoutService, PayPalPayoutService>();
+builder.Services.AddScoped<IMobileMoneyPublicInfoService, MobileMoneyPublicInfoService>();
+builder.Services.AddScoped<IDisbursementQueueService, DisbursementQueueService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();

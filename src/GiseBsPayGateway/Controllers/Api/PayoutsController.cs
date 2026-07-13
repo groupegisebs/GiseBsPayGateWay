@@ -7,7 +7,10 @@ namespace GiseBsPayGateway.Controllers.Api;
 
 [ApiController]
 [Route("api/payouts")]
-public class PayoutsController(ITransferService transferService) : ControllerBase
+public class PayoutsController(
+    ITransferService transferService,
+    IDisbursementQueueService disbursements,
+    IMobileMoneyPublicInfoService mobileMoney) : ControllerBase
 {
     [HttpPost("transfers")]
     public async Task<ActionResult<ConnectTransferResponse>> CreateTransfer(
@@ -35,33 +38,60 @@ public class PayoutsController(ITransferService transferService) : ControllerBas
         return result is null ? NotFound() : Ok(result);
     }
 
-    /// <summary>Stub validation Mobile Money (Phase 4 — agrégateur).</summary>
-    [HttpPost("mobile-money/validate")]
-    public ActionResult<MobileMoneyValidateResponse> ValidateMobileMoney([FromBody] MobileMoneyValidateRequest request)
+    /// <summary>File d'attente : revue + rapprochement admin avant paiement.</summary>
+    [HttpPost("disbursement-requests")]
+    public async Task<ActionResult<DisbursementRequestResponse>> EnqueueDisbursement(
+        [FromBody] CreateDisbursementRequestDto request,
+        CancellationToken cancellationToken)
     {
-        var phone = request.PhoneNumber?.Trim() ?? string.Empty;
-        if (phone.Length < 8)
-            return Ok(new MobileMoneyValidateResponse(false, null, null, "Numéro invalide."));
-
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
-        var masked = digits.Length >= 4
-            ? $"+{digits[..Math.Min(3, digits.Length)]} ••• ••• {digits[^2..]}"
-            : "••••";
-
-        var token = $"mm_{request.OperatorCode}_{Guid.NewGuid():N}"[..40];
-        return Ok(new MobileMoneyValidateResponse(true, masked, token, null));
+        var app = HttpContext.GetClientApplicationContext().Application;
+        try
+        {
+            return Ok(await disbursements.EnqueueAsync(app, request, cancellationToken));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiErrorResponse(ex.Message, null));
+        }
     }
 
-    /// <summary>Stub décaissement Mobile Money.</summary>
-    [HttpPost("mobile-money/disburse")]
-    public ActionResult<object> DisburseMobileMoney([FromBody] CreateConnectTransferRequest request)
+    [HttpGet("disbursement-requests/{reference}")]
+    public async Task<ActionResult<DisbursementRequestResponse>> GetDisbursement(
+        string reference,
+        CancellationToken cancellationToken)
     {
-        return Ok(new
+        var app = HttpContext.GetClientApplicationContext().Application;
+        var result = await disbursements.GetAsync(app, reference, cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("mobile-money/validate")]
+    public ActionResult<MobileMoneyValidateResponse> ValidateMobileMoney([FromBody] MobileMoneyValidateRequest request)
+        => Ok(mobileMoney.ValidatePublicInfo(request));
+
+    [HttpPost("mobile-money/recipients")]
+    public async Task<ActionResult<object>> RegisterMobileMoney(
+        [FromBody] RegisterMobileMoneyRecipientRequest request,
+        CancellationToken cancellationToken)
+    {
+        var app = HttpContext.GetClientApplicationContext().Application;
+        try
         {
-            transferId = $"mm_tx_{Guid.NewGuid():N}"[..24],
-            request.IdempotencyKey,
-            status = "queued",
-            message = "Disbursement accepté (stub agrégateur)."
-        });
+            var recipient = await mobileMoney.RegisterAsync(app, request, cancellationToken);
+            return Ok(new
+            {
+                recipient.ExternalReference,
+                recipient.OperatorCode,
+                recipient.CountryCode,
+                recipient.MaskedPhone,
+                recipient.AccountHolderName,
+                recipient.PublicAccountId,
+                recipient.Status
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiErrorResponse(ex.Message, null));
+        }
     }
 }

@@ -25,6 +25,7 @@ public class ApiKeyAuthenticationMiddleware
         if (!context.Request.Path.StartsWithSegments("/api") ||
             context.Request.Path.StartsWithSegments("/health") ||
             context.Request.Path.StartsWithSegments("/api/webhooks/stripe") ||
+            context.Request.Path.StartsWithSegments("/api/paypal/oauth/callback") ||
             context.Request.Path.StartsWithSegments("/api/auth/token"))
         {
             await _next(context);

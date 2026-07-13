@@ -243,3 +243,41 @@ public record MobileMoneyValidateResponse(
     string? MaskedPhone,
     string? ExternalToken,
     string? Message);
+
+public record RegisterMobileMoneyRecipientRequest(
+    string ExternalReference,
+    string CountryCode,
+    string OperatorCode,
+    string PhoneNumber,
+    string AccountHolderName);
+
+public record CreateDisbursementRequestDto(
+    string ExternalReference,
+    string IdempotencyKey,
+    string SellerExternalId,
+    string? SellerDisplayName,
+    string ProviderCode,
+    string DestinationMasked,
+    string? DestinationToken,
+    long AmountMinor,
+    string Currency,
+    string CountryCode,
+    Dictionary<string, string>? Metadata = null);
+
+public record DisbursementRequestResponse(
+    Guid Id,
+    string ExternalReference,
+    string IdempotencyKey,
+    string ProviderCode,
+    string DestinationMasked,
+    long AmountMinor,
+    string Currency,
+    string CountryCode,
+    string Status,
+    bool ReconciliationChecked,
+    string? ProviderPayoutId,
+    string? FailureMessage);
+
+public record PayPalOAuthStartRequest(string ExternalReference, string? ReturnUrl = null);
+public record PayPalOAuthStartResponse(string AuthorizationUrl, string State);
+public record PayPalLinkedAccountResponse(string ExternalReference, string? MaskedEmail, string Status, string? PayerId);

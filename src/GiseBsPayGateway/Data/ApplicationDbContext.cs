@@ -25,6 +25,9 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
     public DbSet<ConnectedAccount> ConnectedAccounts => Set<ConnectedAccount>();
     public DbSet<ConnectTransfer> ConnectTransfers => Set<ConnectTransfer>();
+    public DbSet<SellerDisbursementRequest> SellerDisbursementRequests => Set<SellerDisbursementRequest>();
+    public DbSet<PayPalLinkedAccount> PayPalLinkedAccounts => Set<PayPalLinkedAccount>();
+    public DbSet<MobileMoneyRecipient> MobileMoneyRecipients => Set<MobileMoneyRecipient>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -228,6 +231,46 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Status).HasMaxLength(40);
             e.Property(x => x.FailureCode).HasMaxLength(100);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+        });
+
+        builder.Entity<SellerDisbursementRequest>(e =>
+        {
+            e.HasIndex(x => new { x.ClientApplicationId, x.IdempotencyKey }).IsUnique();
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.ExternalReference).HasMaxLength(120);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(100);
+            e.Property(x => x.SellerExternalId).HasMaxLength(100);
+            e.Property(x => x.SellerDisplayName).HasMaxLength(200);
+            e.Property(x => x.ProviderCode).HasMaxLength(40);
+            e.Property(x => x.DestinationMasked).HasMaxLength(120);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.CountryCode).HasMaxLength(2);
+            e.Property(x => x.ProviderPayoutId).HasMaxLength(120);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+        });
+
+        builder.Entity<PayPalLinkedAccount>(e =>
+        {
+            e.HasIndex(x => new { x.ClientApplicationId, x.ExternalReference }).IsUnique();
+            e.Property(x => x.ExternalReference).HasMaxLength(100);
+            e.Property(x => x.PayerId).HasMaxLength(80);
+            e.Property(x => x.MaskedEmail).HasMaxLength(256);
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+        });
+
+        builder.Entity<MobileMoneyRecipient>(e =>
+        {
+            e.HasIndex(x => new { x.ClientApplicationId, x.ExternalReference }).IsUnique();
+            e.Property(x => x.ExternalReference).HasMaxLength(100);
+            e.Property(x => x.CountryCode).HasMaxLength(2);
+            e.Property(x => x.OperatorCode).HasMaxLength(40);
+            e.Property(x => x.AccountHolderName).HasMaxLength(200);
+            e.Property(x => x.PhoneE164).HasMaxLength(30);
+            e.Property(x => x.MaskedPhone).HasMaxLength(40);
+            e.Property(x => x.PublicAccountId).HasMaxLength(80);
+            e.Property(x => x.Status).HasMaxLength(40);
             e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
         });
     }
