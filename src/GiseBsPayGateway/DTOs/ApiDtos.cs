@@ -178,3 +178,68 @@ public record TaxCalculationResponse(
     IReadOnlyList<string> TaxLabels,
     IReadOnlyList<TaxComponentDto> Components,
     string Source = "stripe");
+
+// --- Stripe Connect / Payouts ---
+
+public record CreateConnectAccountRequest(
+    string ExternalReference,
+    string? CountryCode = "CA",
+    string? DefaultCurrency = "cad",
+    string? Email = null,
+    string? AccountType = "express",
+    string? BusinessType = null,
+    string? BusinessUrl = null,
+    string? ProductDescription = null);
+
+public record ConnectAccountResponse(
+    string ExternalAccountId,
+    string ExternalReference,
+    string Country,
+    string Currency,
+    string? MaskedEmail,
+    string Status,
+    bool ChargesEnabled,
+    bool PayoutsEnabled,
+    bool DetailsSubmitted,
+    string? RequirementsCurrentlyDueJson);
+
+public record CreateConnectAccountLinkRequest(
+    string ExternalAccountId,
+    string ReturnUrl,
+    string RefreshUrl);
+
+public record ConnectAccountLinkResponse(
+    string ExternalAccountId,
+    string Url,
+    DateTime ExpiresAt);
+
+public record CreateConnectTransferRequest(
+    string DestinationAccountId,
+    long AmountMinor,
+    string Currency,
+    string IdempotencyKey,
+    string? Description = null,
+    Dictionary<string, string>? Metadata = null);
+
+public record ConnectTransferResponse(
+    string TransferId,
+    string IdempotencyKey,
+    string DestinationAccountId,
+    long AmountMinor,
+    string Currency,
+    string Status,
+    string? FailureCode = null,
+    string? FailureMessage = null);
+
+/// <summary>Stub Mobile Money / PayPal — Phase 4.</summary>
+public record MobileMoneyValidateRequest(
+    string CountryCode,
+    string OperatorCode,
+    string PhoneNumber,
+    string AccountHolderName);
+
+public record MobileMoneyValidateResponse(
+    bool IsValid,
+    string? MaskedPhone,
+    string? ExternalToken,
+    string? Message);

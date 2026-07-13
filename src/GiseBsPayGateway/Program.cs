@@ -138,6 +138,15 @@ builder.Services.AddSingleton<IInvoicePdfGenerator, InvoicePdfGenerator>();
 builder.Services.AddSingleton<IInvoiceFileStorage, InvoiceFileStorage>();
 builder.Services.AddSingleton<IInvoiceLinkBuilder, InvoiceLinkBuilder>();
 builder.Services.AddScoped<IWebhookService, WebhookService>();
+builder.Services.AddScoped<IConnectService, ConnectService>();
+builder.Services.AddScoped<ITransferService, ConnectTransferService>();
+builder.Services.Configure<GiseBsPayGateway.Options.PayoutCallbackOptions>(
+    builder.Configuration.GetSection(GiseBsPayGateway.Options.PayoutCallbackOptions.SectionName));
+builder.Services.AddHttpClient("PayoutCallback", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IPayoutCallbackNotifier, PayoutCallbackNotifier>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();

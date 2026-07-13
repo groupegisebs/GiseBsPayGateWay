@@ -16,6 +16,9 @@ public class WebhookService : IWebhookService
     private readonly IStripePaymentDetailsService _stripePaymentDetailsService;
     private readonly ICollectedTaxService _collectedTaxService;
     private readonly IStripeSettingsProvider _stripeSettings;
+    private readonly IConnectService _connectService;
+    private readonly ITransferService _transferService;
+    private readonly IPayoutCallbackNotifier _payoutCallbackNotifier;
     private readonly ILogger<WebhookService> _logger;
 
     public WebhookService(
@@ -25,6 +28,9 @@ public class WebhookService : IWebhookService
         IStripePaymentDetailsService stripePaymentDetailsService,
         ICollectedTaxService collectedTaxService,
         IStripeSettingsProvider stripeSettings,
+        IConnectService connectService,
+        ITransferService transferService,
+        IPayoutCallbackNotifier payoutCallbackNotifier,
         ILogger<WebhookService> logger)
     {
         _db = db;
@@ -33,6 +39,9 @@ public class WebhookService : IWebhookService
         _stripePaymentDetailsService = stripePaymentDetailsService;
         _collectedTaxService = collectedTaxService;
         _stripeSettings = stripeSettings;
+        _connectService = connectService;
+        _transferService = transferService;
+        _payoutCallbackNotifier = payoutCallbackNotifier;
         _logger = logger;
     }
 
@@ -101,6 +110,15 @@ public class WebhookService : IWebhookService
                 case EventTypes.CustomerSubscriptionUpdated:
                 case EventTypes.CustomerSubscriptionDeleted:
                     await HandleSubscriptionChangedAsync(stripeEvent, cancellationToken);
+                    break;
+                case EventTypes.AccountUpdated:
+                    await HandleAccountUpdatedAsync(stripeEvent, cancellationToken);
+                    break;
+                case EventTypes.TransferCreated:
+                case EventTypes.TransferUpdated:
+                case EventTypes.TransferReversed:
+                case "transfer.failed":
+                    await HandleTransferEventAsync(stripeEvent, cancellationToken);
                     break;
                 default:
                     webhookEvent.ProcessingStatus = WebhookProcessingStatus.Ignored;
@@ -961,5 +979,73 @@ public class WebhookService : IWebhookService
         }
 
         return null;
+    }
+
+    private async Task HandleAccountUpdatedAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        if (stripeEvent.Data.Object is not Account account)
+            return;
+
+        await _connectService.SyncAccountFromStripeAsync(account, cancellationToken);
+
+        var entity = await _db.ConnectedAccounts
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.StripeAccountId == account.Id, cancellationToken);
+        if (entity?.ClientApplication is null)
+            return;
+
+        await _payoutCallbackNotifier.NotifyAsync(
+            entity.ClientApplication,
+            "connect.account.updated",
+            new
+            {
+                externalAccountId = entity.StripeAccountId,
+                externalReference = entity.ExternalReference,
+                status = entity.Status,
+                chargesEnabled = entity.ChargesEnabled,
+                payoutsEnabled = entity.PayoutsEnabled,
+                detailsSubmitted = entity.DetailsSubmitted
+            },
+            cancellationToken);
+    }
+
+    private async Task HandleTransferEventAsync(Event stripeEvent, CancellationToken cancellationToken)
+    {
+        if (stripeEvent.Data.Object is not Transfer transfer)
+            return;
+
+        var status = stripeEvent.Type switch
+        {
+            "transfer.failed" => "failed",
+            EventTypes.TransferReversed => "reversed",
+            EventTypes.TransferCreated => "submitted",
+            _ => "processing"
+        };
+
+        await _transferService.UpdateTransferStatusAsync(
+            transfer.Id,
+            status,
+            null,
+            null,
+            cancellationToken);
+
+        var entity = await _db.ConnectTransfers
+            .Include(x => x.ClientApplication)
+            .FirstOrDefaultAsync(x => x.StripeTransferId == transfer.Id, cancellationToken);
+        if (entity?.ClientApplication is null)
+            return;
+
+        await _payoutCallbackNotifier.NotifyAsync(
+            entity.ClientApplication,
+            "connect.transfer.updated",
+            new
+            {
+                transferId = entity.StripeTransferId,
+                idempotencyKey = entity.IdempotencyKey,
+                status,
+                amountMinor = entity.AmountMinor,
+                currency = entity.Currency
+            },
+            cancellationToken);
     }
 }

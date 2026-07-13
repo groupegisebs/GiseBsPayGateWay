@@ -23,6 +23,8 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
+    public DbSet<ConnectedAccount> ConnectedAccounts => Set<ConnectedAccount>();
+    public DbSet<ConnectTransfer> ConnectTransfers => Set<ConnectTransfer>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -200,6 +202,33 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.PublishableKey).HasMaxLength(500);
             e.Property(x => x.SecretKey).HasMaxLength(500);
             e.Property(x => x.WebhookSecret).HasMaxLength(500);
+        });
+
+        builder.Entity<ConnectedAccount>(e =>
+        {
+            e.HasIndex(x => new { x.ClientApplicationId, x.ExternalReference });
+            e.HasIndex(x => x.StripeAccountId).IsUnique();
+            e.Property(x => x.ExternalReference).HasMaxLength(100);
+            e.Property(x => x.StripeAccountId).HasMaxLength(100);
+            e.Property(x => x.Country).HasMaxLength(2);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.AccountType).HasMaxLength(20);
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
+        });
+
+        builder.Entity<ConnectTransfer>(e =>
+        {
+            e.HasIndex(x => new { x.ClientApplicationId, x.IdempotencyKey }).IsUnique();
+            e.HasIndex(x => x.StripeTransferId);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(100);
+            e.Property(x => x.StripeTransferId).HasMaxLength(100);
+            e.Property(x => x.DestinationAccountId).HasMaxLength(100);
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.Status).HasMaxLength(40);
+            e.Property(x => x.FailureCode).HasMaxLength(100);
+            e.HasOne(x => x.ClientApplication).WithMany().HasForeignKey(x => x.ClientApplicationId);
         });
     }
 }
