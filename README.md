@@ -3,9 +3,8 @@
 Service centralisé de paiement réutilisable par les applications GISEBS (TutorSphere, HoloTuto, BoutiqueGise, etc.).
 
 - **Cartes / Checkout** → Stripe  
-- **Mobile money Afrique** (Orange Money, MTN MoMo, Wave, M-Pesa…) → **Flutterwave** (API unique)
 
-Les applications clientes **ne communiquent jamais directement avec Stripe ni Flutterwave**. Elles appellent GISEBS Pay Gateway avec un **AppCode** et une **API Key**.
+Les applications clientes **ne communiquent jamais directement avec Stripe**. Elles appellent GISEBS Pay Gateway avec un **AppCode** et une **API Key**.
 
 ## Stack technique
 
@@ -62,61 +61,13 @@ GiseBsPayGateWay/
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | `POST` | `/api/checkout/session` | Créer une session Stripe Checkout |
-| `GET` | `/api/mobile-money/countries` | Pays + devises + opérateurs Flutterwave |
-| `GET` | `/api/mobile-money/networks?country=CM` | Catalogue opérateurs (filtre pays) |
-| `POST` | `/api/mobile-money/charge` | Initier un paiement mobile money (Flutterwave) |
-| `GET` | `/api/payments/{paymentCode}` | Statut d'un paiement (sync Flutterwave si pending) |
+| `GET` | `/api/payments/{paymentCode}` | Statut d'un paiement |
 | `POST` | `/api/tax/calculate` | Estimation des taxes (Stripe Tax) |
 | `GET` | `/api/tax/collected?from=&to=` | Taxes collectées (par application) |
 | `GET` | `/api/customers/{customerCode}/subscriptions` | Abonnements d'un client |
 | `POST` | `/api/subscriptions/cancel` | Annuler un abonnement |
 | `POST` | `/api/webhooks/stripe` | Webhook Stripe (signature vérifiée) |
-| `POST` | `/api/webhooks/flutterwave` | Webhook Flutterwave (`verif-hash`) |
 | `POST` | `/api/auth/token` | Obtenir un JWT (optionnel) |
-
-### Mobile Money — Flutterwave API v4
-
-Flux interne Pay Gateway → Flutterwave :
-
-1. OAuth2 `client_credentials` (ClientId / ClientSecret)  
-2. `POST /customers`  
-3. `POST /payment-methods` (`type: mobile_money`)  
-4. `POST /charges` (`customer_id` + `payment_method_id`)  
-5. Webhook `charge.completed` ou `GET /charges/{id}`
-
-```http
-POST /api/mobile-money/charge
-X-App-Code: TUTORSPHERE
-X-Api-Key: gbsk_xxx
-Content-Type: application/json
-
-{
-  "customerCode": "cust-001",
-  "email": "parent@example.com",
-  "fullName": "Jean Dupont",
-  "productCode": "YEARLY",
-  "planCode": "YEARLY",
-  "countryCode": "GH",
-  "network": "MTN",
-  "phoneNumber": "9012345678"
-}
-```
-
-Réponse : `instruction` (push PIN) et/ou `redirectUrl` (page Flutterwave).  
-Sandbox redirect : `"scenarioKey": "scenario:auth_redirect"`.
-
-Config :
-
-```json
-"Flutterwave": {
-  "ClientId": "…",
-  "ClientSecret": "…",
-  "UseSandbox": true,
-  "WebhookSecret": "…"
-}
-```
-
-Webhook : `https://gisebsapipaygateway.gisebs.com/api/webhooks/flutterwave`
 
 ### Authentification API
 

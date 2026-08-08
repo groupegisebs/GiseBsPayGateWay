@@ -4,7 +4,6 @@
 @{
     ViewData["Title"] = "Transactions";
     Layout = "_Layout";
-    var provider = Model.ProviderFilter ?? "";
 }
 
 <h1 class="mb-4">Historique des paiements</h1>
@@ -18,35 +17,10 @@
     <div class="alert alert-danger">@err</div>
 }
 
-<ul class="nav nav-pills mb-3 gap-1">
-    <li class="nav-item">
-        <a class="nav-link @(string.IsNullOrEmpty(provider) ? "active" : "")"
-           asp-page="./Index" asp-route-status="@Model.StatusFilter" asp-route-search="@Model.Search">
-            Tous
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link @(provider == "stripe" ? "active" : "")"
-           asp-page="./Index" asp-route-provider="stripe" asp-route-status="@Model.StatusFilter" asp-route-search="@Model.Search">
-            Stripe (@Model.StripeCount)
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link @(provider == "flutterwave" ? "active" : "")"
-           asp-page="./Index" asp-route-provider="flutterwave" asp-route-status="@Model.StatusFilter" asp-route-search="@Model.Search">
-            Mobile Money / Flutterwave (@Model.FlutterwaveCount)
-        </a>
-    </li>
-</ul>
-
 <form method="get" class="row g-2 align-items-end mb-3">
-    @if (!string.IsNullOrEmpty(Model.ProviderFilter))
-    {
-        <input type="hidden" name="provider" value="@Model.ProviderFilter" />
-    }
-    <div class="col-md-4">
+    <div class="col-md-5">
         <label class="form-label">Recherche</label>
-        <input type="search" name="search" value="@Model.Search" class="form-control" placeholder="Code, app, client, Stripe, Flutterwave…" />
+        <input type="search" name="search" value="@Model.Search" class="form-control" placeholder="Code, app, client, produit, Stripe…" />
     </div>
     <div class="col-md-3">
         <label class="form-label">Statut</label>
@@ -60,7 +34,7 @@
     </div>
     <div class="col-md-auto">
         <button type="submit" class="btn btn-outline-secondary">Filtrer</button>
-        @if (!string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.StatusFilter) || !string.IsNullOrEmpty(Model.ProviderFilter))
+        @if (!string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.StatusFilter))
         {
             <a asp-page="./Index" class="btn btn-link">Effacer</a>
         }
@@ -77,7 +51,6 @@
                 <form method="post" asp-page-handler="DeleteAllPending"
                       onsubmit="return confirm('Supprimer jusqu\'à 200 transactions Pending (filtre actuel) ?');">
                     <input type="hidden" name="Search" value="@Model.Search" />
-                    <input type="hidden" name="ProviderFilter" value="@Model.ProviderFilter" />
                     <button type="submit" class="btn btn-sm btn-outline-danger">Purger Pending (@Model.PendingCount)</button>
                 </form>
             }
@@ -109,7 +82,6 @@
         <tr>
             <th>Date</th>
             <th>Code paiement</th>
-            <th>Provider</th>
             <th>Facture GISEBS</th>
             <th>Application</th>
             <th>Client</th>
@@ -117,10 +89,10 @@
             <th>Montant HT</th>
             <th>Total TTC</th>
             <th>Taxes</th>
-            <th>Frais</th>
+            <th>Frais Stripe</th>
             <th>Net</th>
             <th>Statut</th>
-            <th>Réf. provider</th>
+            <th>Stripe PI</th>
             <th>Payé le</th>
             <th></th>
         </tr>
@@ -132,22 +104,10 @@
             : item.Status == "Succeeded" ? "text-bg-success"
             : item.Status == "Failed" ? "text-bg-danger"
             : "text-bg-secondary";
-        var providerBadge = item.Provider == "flutterwave" ? "text-bg-success" : "text-bg-primary";
-        var providerLabel = item.Provider == "flutterwave" ? "Flutterwave" : "Stripe";
-        var providerRef = item.Provider == "flutterwave"
-            ? (item.FlutterwaveTransactionId ?? item.FlutterwaveTxRef ?? "—")
-            : (item.StripePaymentIntentId ?? item.StripeCheckoutSessionId ?? "—");
         <tr>
             <td>@item.CreatedAt.ToString("g")</td>
             <td>
                 <a asp-page="./Details" asp-route-id="@item.Id"><code>@item.PaymentCode</code></a>
-            </td>
-            <td>
-                <span class="badge @providerBadge">@providerLabel</span>
-                @if (item.Provider == "flutterwave" && !string.IsNullOrWhiteSpace(item.MobileMoneyCountry))
-                {
-                    <div><small class="text-muted">@item.MobileMoneyCountry @(item.MobileMoneyNetwork)</small></div>
-                }
             </td>
             <td>@(string.IsNullOrWhiteSpace(item.InvoiceNumber) ? "—" : Html.Raw($"<code>{item.InvoiceNumber}</code>"))</td>
             <td>@item.AppName</td>
@@ -159,7 +119,7 @@
             <td>@(item.StripeFee?.ToString("N2") ?? "—")</td>
             <td>@(item.NetAmount?.ToString("N2") ?? "—")</td>
             <td><span class="badge @badge">@item.Status</span></td>
-            <td><small>@providerRef</small></td>
+            <td><small>@(item.StripePaymentIntentId ?? "—")</small></td>
             <td>@(item.PaidAt?.ToString("g") ?? "—")</td>
             <td class="text-nowrap">
                 <a asp-page="./Details" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary">Détails</a>

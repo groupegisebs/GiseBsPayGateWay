@@ -233,68 +233,6 @@ public record ConnectTransferResponse(
     string? FailureCode = null,
     string? FailureMessage = null);
 
-// ── Collecte Mobile Money (Flutterwave) ─────────────────────────────────────
-
-public record MobileMoneyNetworkDto(
-    string CountryCode,
-    string CountryName,
-    string Currency,
-    string Network,
-    string NetworkLabel,
-    string PhoneCountryCode);
-
-public record MobileMoneyCountryDto(
-    string CountryCode,
-    string CountryName,
-    string Currency,
-    string PhoneCountryCode,
-    IReadOnlyList<MobileMoneyNetworkOptionDto> Networks,
-    /// <summary>Tarif local fixe équivalent à 10 USD.</summary>
-    decimal AmountFor10Usd = 0);
-
-public record MobileMoneyNetworkOptionDto(string Network, string NetworkLabel);
-
-public record CreateMobileMoneyChargeRequest(
-    string CustomerCode,
-    string Email,
-    string? FullName,
-    string? ExternalUserId,
-    string ProductCode,
-    string PlanCode,
-    string CountryCode,
-    string Network,
-    string PhoneNumber,
-    decimal? Amount = null,
-    /// <summary>Devise du montant source (ex. USD). Défaut = devise du plan catalogue.</summary>
-    string? SourceCurrency = null,
-    /// <summary>Sandbox only — ex. scenario:auth_redirect pour tester le flux redirect.</summary>
-    string? ScenarioKey = null);
-
-public record MobileMoneyQuoteResponse(
-    decimal OriginalAmount,
-    string OriginalCurrency,
-    decimal Amount,
-    string Currency,
-    string CountryCode,
-    string CountryName);
-
-public record MobileMoneyChargeResponse(
-    string PaymentCode,
-    string Status,
-    string Provider,
-    string TxRef,
-    string? FlutterwaveTransactionId,
-    decimal Amount,
-    string Currency,
-    string CountryCode,
-    string Network,
-    string PhoneNumber,
-    string? Instruction,
-    string? RedirectUrl,
-    string? Message,
-    decimal? OriginalAmount = null,
-    string? OriginalCurrency = null);
-
 /// <summary>Stub Mobile Money payout — Phase 4.</summary>
 public record MobileMoneyValidateRequest(
     string CountryCode,

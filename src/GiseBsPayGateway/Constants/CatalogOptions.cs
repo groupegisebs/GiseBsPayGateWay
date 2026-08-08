@@ -41,21 +41,12 @@ public static class CatalogOptions
         new("twd", "TWD — Dollar taïwanais"),
         new("try", "TRY — Livre turque"),
         new("idr", "IDR — Roupie indonésienne"),
-        new("pen", "PEN — Sol péruvien"),
-        // Mobile Money (Flutterwave)
-        new("xof", "XOF — Franc CFA Ouest"),
-        new("xaf", "XAF — Franc CFA Centre"),
-        new("ghs", "GHS — Cedi ghanéen"),
-        new("kes", "KES — Shilling kenyan"),
-        new("rwf", "RWF — Franc rwandais"),
-        new("tzs", "TZS — Shilling tanzanien"),
-        new("ugx", "UGX — Shilling ougandais"),
-        new("zmw", "ZMW — Kwacha zambien")
+        new("pen", "PEN — Sol péruvien")
     ];
 
     /// <summary>Devises sans décimales (arrondi entier).</summary>
     public static bool IsZeroDecimalCurrency(string currency) =>
-        currency.Trim().ToLowerInvariant() is "xof" or "xaf" or "ugx" or "rwf" or "jpy" or "krw";
+        currency.Trim().ToLowerInvariant() is "jpy" or "krw";
 
     public record PlanCodeOption(string Code, string Label, BillingInterval BillingInterval);
 

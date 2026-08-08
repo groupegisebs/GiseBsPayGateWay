@@ -50,16 +50,6 @@ public class CurrencyConversionOptions
         ["twd"] = 0.042m,
         ["try"] = 0.040m,
         ["idr"] = 0.000085m,
-        ["pen"] = 0.37m,
-        // Mobile Money — repli si BoC n'a pas la série (1 unité = X CAD).
-        // XOF/XAF : parité fixe ~655.957 / EUR.
-        ["xof"] = 0.00226m,
-        ["xaf"] = 0.00226m,
-        ["ghs"] = 0.09m,
-        ["kes"] = 0.0105m,
-        ["rwf"] = 0.00105m,
-        ["tzs"] = 0.00052m,
-        ["ugx"] = 0.00036m,
-        ["zmw"] = 0.05m
+        ["pen"] = 0.37m
     };
 }

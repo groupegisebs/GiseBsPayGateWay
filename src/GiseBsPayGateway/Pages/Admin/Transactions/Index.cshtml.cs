@@ -28,23 +28,16 @@ public class IndexModel : PageModel
     [BindProperty(SupportsGet = true, Name = "status")]
     public string? StatusFilter { get; set; }
 
-    /// <summary>stripe | flutterwave | vide = tous</summary>
-    [BindProperty(SupportsGet = true, Name = "provider")]
-    public string? ProviderFilter { get; set; }
-
     public AdminPaginationInfo Pagination { get; private set; } = null!;
 
     public IList<TransactionViewModel> Transactions { get; private set; } = [];
 
     public int PendingCount { get; private set; }
-    public int StripeCount { get; private set; }
-    public int FlutterwaveCount { get; private set; }
 
     public record TransactionViewModel(
         Guid Id,
         DateTime CreatedAt,
         string PaymentCode,
-        string Provider,
         string AppName,
         string CustomerCode,
         string ProductCode,
@@ -58,26 +51,19 @@ public class IndexModel : PageModel
         DateTime? PaidAt,
         string? InvoiceNumber,
         string? StripePaymentIntentId,
-        string? StripeCheckoutSessionId,
-        string? FlutterwaveTxRef,
-        string? FlutterwaveTransactionId,
-        string? MobileMoneyCountry,
-        string? MobileMoneyNetwork);
+        string? StripeCheckoutSessionId);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         var (page, search) = AdminListPagination.Parse(PageNumber, Search);
         Search = search;
-        ProviderFilter = NormalizeProvider(ProviderFilter);
 
-        var query = BuildQuery(search, StatusFilter, ProviderFilter);
+        var query = BuildQuery(search, StatusFilter);
         var totalCount = await query.CountAsync(cancellationToken);
         Pagination = AdminListPagination.Create(page, search, totalCount, BuildExtraQuery());
         PageNumber = Pagination.Page;
 
-        PendingCount = await BuildQuery(search, "Pending", ProviderFilter).CountAsync(cancellationToken);
-        StripeCount = await BuildQuery(search, StatusFilter, "stripe").CountAsync(cancellationToken);
-        FlutterwaveCount = await BuildQuery(search, StatusFilter, "flutterwave").CountAsync(cancellationToken);
+        PendingCount = await BuildQuery(search, "Pending").CountAsync(cancellationToken);
 
         Transactions = await query
             .OrderByDescending(x => x.CreatedAt)
@@ -87,7 +73,6 @@ public class IndexModel : PageModel
                 x.Id,
                 x.CreatedAt,
                 x.PaymentCode,
-                x.Provider,
                 x.ClientApplication.Name,
                 x.Customer.CustomerCode,
                 x.Product.ProductCode,
@@ -106,23 +91,19 @@ public class IndexModel : PageModel
                     .Select(i => i.InvoiceCode)
                     .FirstOrDefault(),
                 x.StripePaymentIntentId,
-                x.StripeCheckoutSessionId,
-                x.FlutterwaveTxRef,
-                x.FlutterwaveTransactionId,
-                x.MobileMoneyCountry,
-                x.MobileMoneyNetwork))
+                x.StripeCheckoutSessionId))
             .ToListAsync(cancellationToken);
     }
 
     public async Task<IActionResult> OnPostDeleteAllPendingAsync(CancellationToken cancellationToken)
     {
-        var query = BuildQuery(Search, "Pending", ProviderFilter);
+        var query = BuildQuery(Search, "Pending");
         var pending = await query.OrderBy(x => x.CreatedAt).Take(200).ToListAsync(cancellationToken);
 
         if (pending.Count == 0)
         {
             TempData["Error"] = "Aucune transaction Pending à supprimer.";
-            return RedirectToPage(new { page = PageNumber, search = Search, status = StatusFilter, provider = ProviderFilter });
+            return RedirectToPage(new { page = PageNumber, search = Search, status = StatusFilter });
         }
 
         var ids = pending.Select(x => x.Id).ToList();
@@ -147,22 +128,19 @@ public class IndexModel : PageModel
             nameof(PaymentTransaction),
             null,
             true,
-            $"Count={pending.Count}; Status=Pending; Provider={ProviderFilter ?? "all"}",
+            $"Count={pending.Count}; Status=Pending",
             userName: User.Identity?.Name);
 
         TempData["Success"] = $"{pending.Count} transaction(s) Pending supprimée(s).";
-        return RedirectToPage(new { search = Search, status = StatusFilter, provider = ProviderFilter });
+        return RedirectToPage(new { search = Search, status = StatusFilter });
     }
 
-    private IQueryable<PaymentTransaction> BuildQuery(string? search, string? statusFilter, string? providerFilter)
+    private IQueryable<PaymentTransaction> BuildQuery(string? search, string? statusFilter)
     {
         IQueryable<PaymentTransaction> query = _db.PaymentTransactions
             .Include(x => x.ClientApplication)
             .Include(x => x.Customer)
             .Include(x => x.Product);
-
-        if (!string.IsNullOrWhiteSpace(providerFilter))
-            query = query.Where(x => x.Provider == providerFilter);
 
         if (!string.IsNullOrWhiteSpace(statusFilter)
             && Enum.TryParse<PaymentStatus>(statusFilter, ignoreCase: true, out var status))
@@ -178,12 +156,8 @@ public class IndexModel : PageModel
                 EF.Functions.ILike(x.Customer.CustomerCode, $"%{search}%") ||
                 EF.Functions.ILike(x.Product.ProductCode, $"%{search}%") ||
                 EF.Functions.ILike(x.Status.ToString(), $"%{search}%") ||
-                EF.Functions.ILike(x.Provider, $"%{search}%") ||
                 (x.StripePaymentIntentId != null && EF.Functions.ILike(x.StripePaymentIntentId, $"%{search}%")) ||
                 (x.StripeCheckoutSessionId != null && EF.Functions.ILike(x.StripeCheckoutSessionId, $"%{search}%")) ||
-                (x.FlutterwaveTxRef != null && EF.Functions.ILike(x.FlutterwaveTxRef, $"%{search}%")) ||
-                (x.FlutterwaveTransactionId != null && EF.Functions.ILike(x.FlutterwaveTransactionId, $"%{search}%")) ||
-                (x.MobileMoneyCountry != null && EF.Functions.ILike(x.MobileMoneyCountry, $"%{search}%")) ||
                 _db.PaymentInvoices.Any(i => i.PaymentTransactionId == x.Id && EF.Functions.ILike(i.InvoiceCode, $"%{search}%")));
         }
 
@@ -192,23 +166,8 @@ public class IndexModel : PageModel
 
     private string? BuildExtraQuery()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(StatusFilter))
-            parts.Add($"status={Uri.EscapeDataString(StatusFilter)}");
-        if (!string.IsNullOrWhiteSpace(ProviderFilter))
-            parts.Add($"provider={Uri.EscapeDataString(ProviderFilter)}");
-        return parts.Count == 0 ? null : string.Join("&", parts);
-    }
-
-    private static string? NormalizeProvider(string? provider)
-    {
-        if (string.IsNullOrWhiteSpace(provider))
+        if (string.IsNullOrWhiteSpace(StatusFilter))
             return null;
-        return provider.Trim().ToLowerInvariant() switch
-        {
-            "stripe" => "stripe",
-            "flutterwave" or "mobilemoney" or "mm" => "flutterwave",
-            _ => null
-        };
+        return $"status={Uri.EscapeDataString(StatusFilter)}";
     }
 }
