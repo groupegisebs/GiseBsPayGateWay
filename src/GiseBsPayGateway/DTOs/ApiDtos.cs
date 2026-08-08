@@ -23,7 +23,9 @@ public record CreateCheckoutSessionRequest(
     int? TrialDays,
     bool Embedded = false,
     BillingAddressDto? BillingAddress = null,
-    CustomerUpdateDto? CustomerUpdate = null);
+    CustomerUpdateDto? CustomerUpdate = null,
+    /// <summary>Ex. ["card"], ["paypal"]. Null = méthodes Dashboard Stripe.</summary>
+    IReadOnlyList<string>? PaymentMethodTypes = null);
 
 public record CheckoutSessionResponse(
     string PaymentCode,
@@ -240,6 +242,15 @@ public record MobileMoneyNetworkDto(
     string Network,
     string NetworkLabel,
     string PhoneCountryCode);
+
+public record MobileMoneyCountryDto(
+    string CountryCode,
+    string CountryName,
+    string Currency,
+    string PhoneCountryCode,
+    IReadOnlyList<MobileMoneyNetworkOptionDto> Networks);
+
+public record MobileMoneyNetworkOptionDto(string Network, string NetworkLabel);
 
 public record CreateMobileMoneyChargeRequest(
     string CustomerCode,

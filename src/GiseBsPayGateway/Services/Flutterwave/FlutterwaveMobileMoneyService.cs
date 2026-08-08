@@ -13,7 +13,7 @@ public interface IFlutterwaveMobileMoneyService
 {
     IReadOnlyList<MobileMoneyNetworkDto> ListNetworks(string? countryCode = null);
 
-    object ListCountries();
+    IReadOnlyList<MobileMoneyCountryDto> ListCountries();
 
     Task<MobileMoneyChargeResponse> ChargeAsync(
         ClientApplication app,
@@ -43,7 +43,7 @@ public sealed class FlutterwaveMobileMoneyService(
                 x.PhoneCountryCode))
             .ToList();
 
-    public object ListCountries() => MobileMoneyNetworkCatalog.ListCountries();
+    public IReadOnlyList<MobileMoneyCountryDto> ListCountries() => MobileMoneyNetworkCatalog.ListCountries();
 
     public async Task<MobileMoneyChargeResponse> ChargeAsync(
         ClientApplication app,

@@ -19,7 +19,7 @@ public class MobileMoneyController(IFlutterwaveMobileMoneyService mobileMoney) :
     /// XOF (BF, CI, SN), XAF (CM), GHS, KES, RWF, TZS, UGX, ZMW.
     /// </summary>
     [HttpGet("countries")]
-    public ActionResult<object> Countries() => Ok(mobileMoney.ListCountries());
+    public ActionResult<IReadOnlyList<MobileMoneyCountryDto>> Countries() => Ok(mobileMoney.ListCountries());
 
     /// <summary>
     /// Initie un paiement mobile money via Flutterwave (Orange Money, MTN MoMo, Wave, M-Pesa…).

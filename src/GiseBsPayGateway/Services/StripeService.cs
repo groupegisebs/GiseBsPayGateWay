@@ -219,6 +219,7 @@ public class StripeService : IStripeService
         bool embedded = false,
         BillingAddressDto? billingAddress = null,
         CustomerUpdateDto? customerUpdate = null,
+        IReadOnlyList<string>? paymentMethodTypes = null,
         CancellationToken cancellationToken = default)
     {
         await ConfigureStripeAsync(cancellationToken);
@@ -242,23 +243,52 @@ public class StripeService : IStripeService
         var (billingAddressCollection, customerUpdateAddress) =
             StripeCheckoutTaxOptions.Resolve(hasPrefilledBillingAddress, customerUpdate);
 
-        var sessionService = new SessionService();
-        var options = new SessionCreateOptions
+        // PayPal Checkout Stripe : mode payment + prix one-shot (les Price récurrents sont incompatibles).
+        var preferPayPal = paymentMethodTypes?.Any(x =>
+            x.Equals("paypal", StringComparison.OrdinalIgnoreCase)) == true;
+        var mode = preferPayPal || plan.BillingInterval == BillingInterval.OneTime
+            ? "payment"
+            : "subscription";
+
+        List<SessionLineItemOptions> lineItems;
+        if (preferPayPal && plan.BillingInterval != BillingInterval.OneTime)
         {
-            Mode = plan.BillingInterval == BillingInterval.OneTime ? "payment" : "subscription",
-            Customer = stripeCustomerId,
-            ClientReferenceId = payment.PaymentCode,
-            // Stripe Tax : activer dans le Dashboard (Settings → Tax), ajouter les enregistrements fiscaux canadiens (GST/HST/QST).
-            AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
-            BillingAddressCollection = billingAddressCollection,
-            LineItems =
+            lineItems =
+            [
+                new SessionLineItemOptions
+                {
+                    Quantity = 1,
+                    PriceData = new SessionLineItemPriceDataOptions
+                    {
+                        Currency = planCurrency,
+                        UnitAmount = (long)(plan.Amount * 100),
+                        Product = stripeProductId
+                    }
+                }
+            ];
+        }
+        else
+        {
+            lineItems =
             [
                 new SessionLineItemOptions
                 {
                     Price = stripePriceId,
                     Quantity = 1
                 }
-            ],
+            ];
+        }
+
+        var sessionService = new SessionService();
+        var options = new SessionCreateOptions
+        {
+            Mode = mode,
+            Customer = stripeCustomerId,
+            ClientReferenceId = payment.PaymentCode,
+            // Stripe Tax : activer dans le Dashboard (Settings → Tax), ajouter les enregistrements fiscaux canadiens (GST/HST/QST).
+            AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
+            BillingAddressCollection = billingAddressCollection,
+            LineItems = lineItems,
             Metadata = new Dictionary<string, string>
             {
                 ["payment_code"] = payment.PaymentCode,
@@ -267,6 +297,15 @@ public class StripeService : IStripeService
                 ["plan_code"] = plan.PlanCode
             }
         };
+
+        if (paymentMethodTypes is { Count: > 0 })
+        {
+            options.PaymentMethodTypes = paymentMethodTypes
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
 
         if (!string.IsNullOrWhiteSpace(customerUpdateAddress))
         {
@@ -289,7 +328,7 @@ public class StripeService : IStripeService
             options.CancelUrl = cancelUrl;
         }
 
-        if (plan.BillingInterval != BillingInterval.OneTime)
+        if (mode == "subscription")
         {
             options.SubscriptionData = new SessionSubscriptionDataOptions
             {

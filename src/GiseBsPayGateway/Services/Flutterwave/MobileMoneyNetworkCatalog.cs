@@ -1,3 +1,5 @@
+using GiseBsPayGateway.DTOs;
+
 namespace GiseBsPayGateway.Services.Flutterwave;
 
 /// <summary>
@@ -90,19 +92,16 @@ public static class MobileMoneyNetworkCatalog
         return All.Where(x => x.CountryCode.Equals(countryCode.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
-    public static IReadOnlyList<object> ListCountries() =>
+    public static IReadOnlyList<MobileMoneyCountryDto> ListCountries() =>
         All
             .GroupBy(x => new { x.CountryCode, x.CountryName, x.Currency, x.PhoneCountryCode })
-            .Select(g => new
-            {
+            .Select(g => new MobileMoneyCountryDto(
                 g.Key.CountryCode,
                 g.Key.CountryName,
                 g.Key.Currency,
                 g.Key.PhoneCountryCode,
-                Networks = g.Select(n => new { n.Network, n.NetworkLabel }).ToList()
-            })
+                g.Select(n => new MobileMoneyNetworkOptionDto(n.Network, n.NetworkLabel)).ToList()))
             .OrderBy(x => x.CountryName)
-            .Cast<object>()
             .ToList();
 
     public static string NormalizeNetwork(string network)

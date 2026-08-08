@@ -126,6 +126,7 @@ public class PaymentService : IPaymentService
             request.Embedded,
             formattedBillingAddress ?? request.BillingAddress,
             request.CustomerUpdate,
+            request.PaymentMethodTypes,
             cancellationToken);
 
         payment.StripeCheckoutSessionId = sessionId;
