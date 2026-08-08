@@ -155,6 +155,19 @@ builder.Services.AddHttpClient("PayPal", client =>
 builder.Services.AddScoped<IPayoutCallbackNotifier, PayoutCallbackNotifier>();
 builder.Services.AddScoped<IPayPalPayoutService, PayPalPayoutService>();
 builder.Services.AddScoped<IMobileMoneyPublicInfoService, MobileMoneyPublicInfoService>();
+builder.Services.Configure<GiseBsPayGateway.Options.FlutterwaveOptions>(
+    builder.Configuration.GetSection(GiseBsPayGateway.Options.FlutterwaveOptions.SectionName));
+builder.Services.AddHttpClient("FlutterwaveToken", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<GiseBsPayGateway.Services.Flutterwave.IFlutterwaveApiClient,
+    GiseBsPayGateway.Services.Flutterwave.FlutterwaveApiClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+builder.Services.AddScoped<GiseBsPayGateway.Services.Flutterwave.IFlutterwaveMobileMoneyService,
+    GiseBsPayGateway.Services.Flutterwave.FlutterwaveMobileMoneyService>();
 builder.Services.AddScoped<IDisbursementQueueService, DisbursementQueueService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

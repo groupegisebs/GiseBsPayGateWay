@@ -231,7 +231,46 @@ public record ConnectTransferResponse(
     string? FailureCode = null,
     string? FailureMessage = null);
 
-/// <summary>Stub Mobile Money / PayPal — Phase 4.</summary>
+// ── Collecte Mobile Money (Flutterwave) ─────────────────────────────────────
+
+public record MobileMoneyNetworkDto(
+    string CountryCode,
+    string CountryName,
+    string Currency,
+    string Network,
+    string NetworkLabel,
+    string PhoneCountryCode);
+
+public record CreateMobileMoneyChargeRequest(
+    string CustomerCode,
+    string Email,
+    string? FullName,
+    string? ExternalUserId,
+    string ProductCode,
+    string PlanCode,
+    string CountryCode,
+    string Network,
+    string PhoneNumber,
+    decimal? Amount = null,
+    /// <summary>Sandbox only — ex. scenario:auth_redirect pour tester le flux redirect.</summary>
+    string? ScenarioKey = null);
+
+public record MobileMoneyChargeResponse(
+    string PaymentCode,
+    string Status,
+    string Provider,
+    string TxRef,
+    string? FlutterwaveTransactionId,
+    decimal Amount,
+    string Currency,
+    string CountryCode,
+    string Network,
+    string PhoneNumber,
+    string? Instruction,
+    string? RedirectUrl,
+    string? Message);
+
+/// <summary>Stub Mobile Money payout — Phase 4.</summary>
 public record MobileMoneyValidateRequest(
     string CountryCode,
     string OperatorCode,

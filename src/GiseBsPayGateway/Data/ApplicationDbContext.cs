@@ -79,7 +79,9 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
         builder.Entity<PaymentTransaction>(e =>
         {
             e.HasIndex(x => x.PaymentCode).IsUnique();
+            e.HasIndex(x => x.FlutterwaveTxRef);
             e.Property(x => x.PaymentCode).HasMaxLength(50);
+            e.Property(x => x.Provider).HasMaxLength(30);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.OriginalAmount).HasPrecision(18, 2);
@@ -91,6 +93,11 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.StripeFee).HasPrecision(18, 2);
             e.Property(x => x.NetAmount).HasPrecision(18, 2);
             e.Property(x => x.StripeBalanceTransactionId).HasMaxLength(100);
+            e.Property(x => x.FlutterwaveTxRef).HasMaxLength(100);
+            e.Property(x => x.FlutterwaveTransactionId).HasMaxLength(100);
+            e.Property(x => x.MobileMoneyNetwork).HasMaxLength(40);
+            e.Property(x => x.MobileMoneyPhone).HasMaxLength(30);
+            e.Property(x => x.MobileMoneyCountry).HasMaxLength(2);
             e.Property(x => x.BillingCountry).HasMaxLength(2);
             e.Property(x => x.BillingState).HasMaxLength(50);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.ClientApplicationId);
