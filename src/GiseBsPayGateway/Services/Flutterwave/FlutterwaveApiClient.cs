@@ -59,8 +59,8 @@ public sealed class FlutterwaveApiClient : IFlutterwaveApiClient
         var (dial, national) = MobileMoneyNetworkCatalog.SplitPhone(request.PhoneNumber, request.PhoneCountryCode);
         var nameParts = SplitName(request.FullName);
 
-        // Step 1 — Customer
-        var customerId = await CreateCustomerAsync(request.Email, nameParts, dial, national, ct);
+        // Step 1 — Customer (réutilise si déjà créé — paiements / renouvellements répétés)
+        var customerId = await GetOrCreateCustomerAsync(request.Email, nameParts, dial, national, ct);
 
         // Step 2 — Payment method (mobile_money)
         var paymentMethodId = await CreateMobileMoneyPaymentMethodAsync(
@@ -170,13 +170,17 @@ public sealed class FlutterwaveApiClient : IFlutterwaveApiClient
         return new FlutterwaveVerifyResult(status, id, reference, amount, currency, body);
     }
 
-    private async Task<string> CreateCustomerAsync(
+    private async Task<string> GetOrCreateCustomerAsync(
         string email,
         (string First, string? Middle, string Last) name,
         string dial,
         string national,
         CancellationToken ct)
     {
+        var existing = await FindCustomerIdByEmailAsync(email, ct);
+        if (!string.IsNullOrWhiteSpace(existing))
+            return existing;
+
         var payload = new Dictionary<string, object?>
         {
             ["email"] = email,
@@ -201,15 +205,66 @@ public sealed class FlutterwaveApiClient : IFlutterwaveApiClient
         var body = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
 
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException(ExtractError(doc.RootElement) ?? "Création client Flutterwave échouée.");
+        if (response.IsSuccessStatusCode)
+        {
+            if (!doc.RootElement.TryGetProperty("data", out var data)
+                || !data.TryGetProperty("id", out var idEl)
+                || string.IsNullOrWhiteSpace(idEl.GetString()))
+                throw new InvalidOperationException("Flutterwave customer id manquant.");
 
-        if (!doc.RootElement.TryGetProperty("data", out var data)
-            || !data.TryGetProperty("id", out var idEl)
-            || string.IsNullOrWhiteSpace(idEl.GetString()))
-            throw new InvalidOperationException("Flutterwave customer id manquant.");
+            return idEl.GetString()!;
+        }
 
-        return idEl.GetString()!;
+        var err = ExtractError(doc.RootElement) ?? "";
+        if (err.Contains("already exists", StringComparison.OrdinalIgnoreCase)
+            || err.Contains("déjà", StringComparison.OrdinalIgnoreCase))
+        {
+            var again = await FindCustomerIdByEmailAsync(email, ct);
+            if (!string.IsNullOrWhiteSpace(again))
+                return again;
+        }
+
+        throw new InvalidOperationException(err.Length > 0 ? err : "Création client Flutterwave échouée.");
+    }
+
+    private async Task<string?> FindCustomerIdByEmailAsync(string email, CancellationToken ct)
+    {
+        try
+        {
+            using var req = await CreateAuthorizedRequestAsync(HttpMethod.Post, "customers/search", ct);
+            req.Headers.TryAddWithoutValidation("X-Idempotency-Key", $"cust-search-{Guid.NewGuid():N}");
+            req.Content = JsonContent.Create(new { email }, options: JsonOpts);
+
+            using var response = await _http.SendAsync(req, ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return null;
+
+            if (data.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in data.EnumerateArray())
+                {
+                    if (item.TryGetProperty("id", out var idEl) && !string.IsNullOrWhiteSpace(idEl.GetString()))
+                        return idEl.GetString();
+                }
+            }
+            else if (data.ValueKind == JsonValueKind.Object
+                     && data.TryGetProperty("id", out var singleId)
+                     && !string.IsNullOrWhiteSpace(singleId.GetString()))
+            {
+                return singleId.GetString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Flutterwave customers/search échoué pour {Email}", email);
+        }
+
+        return null;
     }
 
     private async Task<string> CreateMobileMoneyPaymentMethodAsync(

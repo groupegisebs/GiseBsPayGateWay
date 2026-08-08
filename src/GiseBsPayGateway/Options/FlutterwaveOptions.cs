@@ -35,6 +35,12 @@ public class FlutterwaveOptions
         set => WebhookSecret = value;
     }
 
+    /// <summary>
+    /// Montants locaux fixes pour <b>10 USD</b> (clés = XOF, XAF, GHS…).
+    /// Surcharge la grille par défaut ; utile dans secrets.json.
+    /// </summary>
+    public Dictionary<string, decimal> FixedAmountsFor10Usd { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
 

@@ -100,7 +100,10 @@ public static class MobileMoneyNetworkCatalog
                 g.Key.CountryName,
                 g.Key.Currency,
                 g.Key.PhoneCountryCode,
-                g.Select(n => new MobileMoneyNetworkOptionDto(n.Network, n.NetworkLabel)).ToList()))
+                g.Select(n => new MobileMoneyNetworkOptionDto(n.Network, n.NetworkLabel)).ToList(),
+                AmountFor10Usd: MobileMoneyFixedPricing.DefaultFor10Usd.TryGetValue(g.Key.Currency, out var a)
+                    ? a
+                    : 0))
             .OrderBy(x => x.CountryName)
             .ToList();
 

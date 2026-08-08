@@ -166,6 +166,8 @@ builder.Services.AddHttpClient<GiseBsPayGateway.Services.Flutterwave.IFlutterwav
 {
     client.Timeout = TimeSpan.FromSeconds(60);
 });
+builder.Services.AddSingleton<GiseBsPayGateway.Services.Flutterwave.IMobileMoneyFixedPricing,
+    GiseBsPayGateway.Services.Flutterwave.MobileMoneyFixedPricing>();
 builder.Services.AddScoped<GiseBsPayGateway.Services.Flutterwave.IFlutterwaveMobileMoneyService,
     GiseBsPayGateway.Services.Flutterwave.FlutterwaveMobileMoneyService>();
 builder.Services.AddScoped<IDisbursementQueueService, DisbursementQueueService>();

@@ -37,6 +37,7 @@ public sealed class FlutterwaveMobileMoneyService(
     ApplicationDbContext db,
     IFlutterwaveApiClient flutterwave,
     ICurrencyConversionService conversion,
+    IMobileMoneyFixedPricing fixedPricing,
     IOptions<FlutterwaveOptions> options,
     IAuditService audit,
     ILogger<FlutterwaveMobileMoneyService> logger) : IFlutterwaveMobileMoneyService
@@ -52,7 +53,10 @@ public sealed class FlutterwaveMobileMoneyService(
                 x.PhoneCountryCode))
             .ToList();
 
-    public IReadOnlyList<MobileMoneyCountryDto> ListCountries() => MobileMoneyNetworkCatalog.ListCountries();
+    public IReadOnlyList<MobileMoneyCountryDto> ListCountries() =>
+        MobileMoneyNetworkCatalog.ListCountries()
+            .Select(c => c with { AmountFor10Usd = fixedPricing.GetAmountFor10Usd(c.Currency) })
+            .ToList();
 
     public async Task<MobileMoneyQuoteResponse> QuoteAsync(
         decimal amount,
@@ -66,7 +70,8 @@ public sealed class FlutterwaveMobileMoneyService(
         var country = MobileMoneyNetworkCatalog.ForCountry(countryCode).FirstOrDefault()
             ?? throw new InvalidOperationException($"Pays Mobile Money inconnu : '{countryCode}'.");
 
-        var converted = await conversion.ConvertAsync(amount, fromCurrency, country.Currency, ct);
+        var converted = await fixedPricing.ConvertToLocalAsync(
+            amount, fromCurrency, country.Currency, conversion, ct);
         if (converted < 1m && CatalogOptions.IsZeroDecimalCurrency(country.Currency))
             throw new InvalidOperationException(
                 $"Montant converti trop bas ({converted} {country.Currency}).");
@@ -145,7 +150,9 @@ public sealed class FlutterwaveMobileMoneyService(
             throw new InvalidOperationException("Montant invalide.");
 
         var currency = network.Currency;
-        var amount = await conversion.ConvertAsync(sourceAmount, sourceCurrency, currency, ct);
+        // Grille fixe ≈ 10 USD (proportionnelle pour les autres montants).
+        var amount = await fixedPricing.ConvertToLocalAsync(
+            sourceAmount, sourceCurrency, currency, conversion, ct);
         if (amount <= 0)
             throw new InvalidOperationException("Montant converti invalide.");
 
