@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GiseBsPayGateway.Constants;
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
@@ -6,6 +7,7 @@ using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using ICurrencyConversionService = GiseBsPayGateway.Services.ICurrencyConversionService;
 
 namespace GiseBsPayGateway.Services.Flutterwave;
 
@@ -14,6 +16,12 @@ public interface IFlutterwaveMobileMoneyService
     IReadOnlyList<MobileMoneyNetworkDto> ListNetworks(string? countryCode = null);
 
     IReadOnlyList<MobileMoneyCountryDto> ListCountries();
+
+    Task<MobileMoneyQuoteResponse> QuoteAsync(
+        decimal amount,
+        string fromCurrency,
+        string countryCode,
+        CancellationToken ct = default);
 
     Task<MobileMoneyChargeResponse> ChargeAsync(
         ClientApplication app,
@@ -28,6 +36,7 @@ public interface IFlutterwaveMobileMoneyService
 public sealed class FlutterwaveMobileMoneyService(
     ApplicationDbContext db,
     IFlutterwaveApiClient flutterwave,
+    ICurrencyConversionService conversion,
     IOptions<FlutterwaveOptions> options,
     IAuditService audit,
     ILogger<FlutterwaveMobileMoneyService> logger) : IFlutterwaveMobileMoneyService
@@ -44,6 +53,32 @@ public sealed class FlutterwaveMobileMoneyService(
             .ToList();
 
     public IReadOnlyList<MobileMoneyCountryDto> ListCountries() => MobileMoneyNetworkCatalog.ListCountries();
+
+    public async Task<MobileMoneyQuoteResponse> QuoteAsync(
+        decimal amount,
+        string fromCurrency,
+        string countryCode,
+        CancellationToken ct = default)
+    {
+        if (amount <= 0)
+            throw new InvalidOperationException("Montant invalide.");
+
+        var country = MobileMoneyNetworkCatalog.ForCountry(countryCode).FirstOrDefault()
+            ?? throw new InvalidOperationException($"Pays Mobile Money inconnu : '{countryCode}'.");
+
+        var converted = await conversion.ConvertAsync(amount, fromCurrency, country.Currency, ct);
+        if (converted < 1m && CatalogOptions.IsZeroDecimalCurrency(country.Currency))
+            throw new InvalidOperationException(
+                $"Montant converti trop bas ({converted} {country.Currency}).");
+
+        return new MobileMoneyQuoteResponse(
+            amount,
+            fromCurrency.Trim().ToUpperInvariant(),
+            converted,
+            country.Currency.ToUpperInvariant(),
+            country.CountryCode,
+            country.CountryName);
+    }
 
     public async Task<MobileMoneyChargeResponse> ChargeAsync(
         ClientApplication app,
@@ -102,11 +137,18 @@ public sealed class FlutterwaveMobileMoneyService(
             await db.SaveChangesAsync(ct);
         }
 
-        var amount = request.Amount ?? plan.Amount;
-        if (amount <= 0)
+        var sourceCurrency = string.IsNullOrWhiteSpace(request.SourceCurrency)
+            ? plan.Currency
+            : request.SourceCurrency;
+        var sourceAmount = request.Amount ?? plan.Amount;
+        if (sourceAmount <= 0)
             throw new InvalidOperationException("Montant invalide.");
 
         var currency = network.Currency;
+        var amount = await conversion.ConvertAsync(sourceAmount, sourceCurrency, currency, ct);
+        if (amount <= 0)
+            throw new InvalidOperationException("Montant converti invalide.");
+
         var paymentCode = $"PAY-{app.AppCode.ToUpperInvariant()}-{Guid.NewGuid():N}"[..32];
         var reference = Guid.NewGuid().ToString("D");
         var (_, national) = MobileMoneyNetworkCatalog.SplitPhone(request.PhoneNumber, network.PhoneCountryCode);
@@ -122,6 +164,8 @@ public sealed class FlutterwaveMobileMoneyService(
             Status = PaymentStatus.Pending,
             Amount = amount,
             Currency = currency.ToLowerInvariant(),
+            OriginalAmount = sourceAmount,
+            OriginalCurrency = sourceCurrency.Trim().ToLowerInvariant(),
             Provider = "flutterwave",
             FlutterwaveTxRef = reference,
             MobileMoneyNetwork = network.Network,
@@ -175,7 +219,9 @@ public sealed class FlutterwaveMobileMoneyService(
                 PhoneNumber: displayPhone,
                 Instruction: charge.Instruction,
                 RedirectUrl: charge.RedirectUrl,
-                Message: charge.Message);
+                Message: charge.Message,
+                OriginalAmount: sourceAmount,
+                OriginalCurrency: sourceCurrency.Trim().ToUpperInvariant());
         }
         catch (Exception ex)
         {

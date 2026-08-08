@@ -30,9 +30,7 @@ public class CurrencyConversionService : ICurrencyConversionService
         var to = CatalogOptions.ResolveCurrency(toCurrency);
 
         if (from == to)
-        {
-            return decimal.Round(amount, 2, MidpointRounding.AwayFromZero);
-        }
+            return RoundForCurrency(amount, to);
 
         var rates = await _rates.GetRatesToCadAsync(cancellationToken);
 
@@ -50,6 +48,12 @@ public class CurrencyConversionService : ICurrencyConversionService
 
         var amountInCad = amount * fromRate;
         var converted = amountInCad / toRate;
-        return decimal.Round(converted, 2, MidpointRounding.AwayFromZero);
+        return RoundForCurrency(converted, to);
+    }
+
+    public static decimal RoundForCurrency(decimal amount, string currency)
+    {
+        var decimals = CatalogOptions.IsZeroDecimalCurrency(currency) ? 0 : 2;
+        return decimal.Round(amount, decimals, MidpointRounding.AwayFromZero);
     }
 }

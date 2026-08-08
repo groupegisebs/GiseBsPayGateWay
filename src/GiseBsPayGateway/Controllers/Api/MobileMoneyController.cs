@@ -22,8 +22,28 @@ public class MobileMoneyController(IFlutterwaveMobileMoneyService mobileMoney) :
     public ActionResult<IReadOnlyList<MobileMoneyCountryDto>> Countries() => Ok(mobileMoney.ListCountries());
 
     /// <summary>
+    /// Convertit un montant catalogue vers la devise Mobile Money du pays (ex. 10 USD → XAF pour CM).
+    /// </summary>
+    [HttpGet("quote")]
+    public async Task<ActionResult<MobileMoneyQuoteResponse>> Quote(
+        [FromQuery] decimal amount,
+        [FromQuery] string currency,
+        [FromQuery] string countryCode,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await mobileMoney.QuoteAsync(amount, currency, countryCode, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Initie un paiement mobile money via Flutterwave (Orange Money, MTN MoMo, Wave, M-Pesa…).
-    /// Le client valide sur son téléphone ; le statut final arrive par webhook ou GET /api/payments/{code}.
+    /// Le montant est toujours converti dans la devise du pays sélectionné.
     /// </summary>
     [HttpPost("charge")]
     public async Task<ActionResult<MobileMoneyChargeResponse>> Charge(

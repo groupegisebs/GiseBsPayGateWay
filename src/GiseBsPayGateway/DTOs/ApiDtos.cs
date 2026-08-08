@@ -263,8 +263,18 @@ public record CreateMobileMoneyChargeRequest(
     string Network,
     string PhoneNumber,
     decimal? Amount = null,
+    /// <summary>Devise du montant source (ex. USD). Défaut = devise du plan catalogue.</summary>
+    string? SourceCurrency = null,
     /// <summary>Sandbox only — ex. scenario:auth_redirect pour tester le flux redirect.</summary>
     string? ScenarioKey = null);
+
+public record MobileMoneyQuoteResponse(
+    decimal OriginalAmount,
+    string OriginalCurrency,
+    decimal Amount,
+    string Currency,
+    string CountryCode,
+    string CountryName);
 
 public record MobileMoneyChargeResponse(
     string PaymentCode,
@@ -279,7 +289,9 @@ public record MobileMoneyChargeResponse(
     string PhoneNumber,
     string? Instruction,
     string? RedirectUrl,
-    string? Message);
+    string? Message,
+    decimal? OriginalAmount = null,
+    string? OriginalCurrency = null);
 
 /// <summary>Stub Mobile Money payout — Phase 4.</summary>
 public record MobileMoneyValidateRequest(
