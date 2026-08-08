@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using GiseBsPayGateway.Constants;
 using GiseBsPayGateway.Data;
@@ -256,7 +258,7 @@ public sealed class FlutterwaveMobileMoneyService(
 
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawBody) ? "{}" : rawBody);
         var root = doc.RootElement;
-        var eventType = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+        var eventType = root.TryGetProperty("type", out var t) ? t.GetString() : "unknown";
         var data = root.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object ? d : root;
 
         // v4: data.reference + data.status (succeeded) + data.id (chg_…)
@@ -265,34 +267,96 @@ public sealed class FlutterwaveMobileMoneyService(
         var status = data.TryGetProperty("status", out var st) ? st.GetString() : null;
         var chargeId = data.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
 
-        if (string.IsNullOrWhiteSpace(reference))
+        var eventId = BuildFlutterwaveEventId(chargeId, status, eventType, reference, rawBody);
+        if (await db.FlutterwaveWebhookEvents.AnyAsync(x => x.FlutterwaveEventId == eventId, ct))
         {
-            logger.LogWarning("Flutterwave webhook sans reference (type={Type})", eventType);
+            logger.LogInformation("Événement Flutterwave déjà traité: {EventId}", eventId);
             return;
         }
 
-        var payment = await db.PaymentTransactions
-            .FirstOrDefaultAsync(x => x.FlutterwaveTxRef == reference, ct);
-
-        if (payment is null)
+        var webhookEvent = new FlutterwaveWebhookEvent
         {
-            logger.LogWarning("Flutterwave webhook: paiement inconnu reference={Reference}", reference);
-            return;
-        }
-
-        if (payment.Status is PaymentStatus.Succeeded or PaymentStatus.Cancelled)
-            return;
-
-        ApplyStatus(payment, status, chargeId);
-        payment.UpdatedAt = DateTime.UtcNow;
+            FlutterwaveEventId = eventId,
+            EventType = eventType ?? "unknown",
+            Reference = reference,
+            ChargeId = chargeId,
+            Payload = rawBody,
+            ProcessingStatus = WebhookProcessingStatus.Processing
+        };
+        db.FlutterwaveWebhookEvents.Add(webhookEvent);
         await db.SaveChangesAsync(ct);
 
-        await audit.LogAsync(
-            "FlutterwaveWebhook",
-            nameof(PaymentTransaction),
-            payment.Id.ToString(),
-            true,
-            $"Type={eventType};Reference={reference};Status={status};ChargeId={chargeId}");
+        try
+        {
+            if (string.IsNullOrWhiteSpace(reference))
+            {
+                logger.LogWarning("Flutterwave webhook sans reference (type={Type})", eventType);
+                webhookEvent.ProcessingStatus = WebhookProcessingStatus.Ignored;
+                webhookEvent.ErrorMessage = "Référence absente";
+                webhookEvent.ProcessedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+
+            var payment = await db.PaymentTransactions
+                .FirstOrDefaultAsync(x => x.FlutterwaveTxRef == reference, ct);
+
+            if (payment is null)
+            {
+                logger.LogWarning("Flutterwave webhook: paiement inconnu reference={Reference}", reference);
+                webhookEvent.ProcessingStatus = WebhookProcessingStatus.Ignored;
+                webhookEvent.ErrorMessage = $"Paiement inconnu: {reference}";
+                webhookEvent.ProcessedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+
+            if (payment.Status is PaymentStatus.Succeeded or PaymentStatus.Cancelled)
+            {
+                webhookEvent.ProcessingStatus = WebhookProcessingStatus.Ignored;
+                webhookEvent.ErrorMessage = $"Paiement déjà {payment.Status}";
+                webhookEvent.ProcessedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+
+            ApplyStatus(payment, status, chargeId);
+            payment.UpdatedAt = DateTime.UtcNow;
+            webhookEvent.ProcessingStatus = WebhookProcessingStatus.Processed;
+            webhookEvent.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            await audit.LogAsync(
+                "FlutterwaveWebhook",
+                nameof(PaymentTransaction),
+                payment.Id.ToString(),
+                true,
+                $"Type={eventType};Reference={reference};Status={status};ChargeId={chargeId}");
+        }
+        catch (Exception ex)
+        {
+            webhookEvent.ProcessingStatus = WebhookProcessingStatus.Failed;
+            webhookEvent.ErrorMessage = ex.Message;
+            webhookEvent.ProcessedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            throw;
+        }
+    }
+
+    private static string BuildFlutterwaveEventId(
+        string? chargeId,
+        string? status,
+        string? eventType,
+        string? reference,
+        string rawBody)
+    {
+        if (!string.IsNullOrWhiteSpace(chargeId) || !string.IsNullOrWhiteSpace(reference))
+        {
+            var key = $"{chargeId}|{status}|{eventType}|{reference}";
+            return key.Length <= 200 ? key : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..40];
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawBody ?? "")))[..40];
     }
 
     public async Task RefreshPendingAsync(PaymentTransaction payment, CancellationToken ct = default)
