@@ -1,35 +1,110 @@
 @page
 @model GiseBsPayGateway.Pages.Admin.Webhooks.IndexModel
 @{
-    ViewData["Title"] = "Webhooks Stripe";
+    ViewData["Title"] = "Webhooks";
     Layout = "_Layout";
+    var provider = Model.ProviderFilter ?? "";
 }
 
-<h1 class="mb-4">Événements webhook Stripe</h1>
+<h1 class="mb-2">Événements webhook</h1>
+<p class="text-muted mb-3">
+    Stripe et Flutterwave arrivent sur des endpoints distincts
+    (<code>/api/webhooks/stripe</code> · <code>/api/webhooks/flutterwave</code>).
+</p>
 
-<partial name="_AdminListToolbar" model="Model.Pagination" />
+<ul class="nav nav-pills mb-3 gap-1">
+    <li class="nav-item">
+        <a class="nav-link @(string.IsNullOrEmpty(provider) ? "active" : "")"
+           asp-page="./Index" asp-route-search="@Model.Search">Tous (@(Model.StripeCount + Model.FlutterwaveCount))</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(provider == "stripe" ? "active" : "")"
+           asp-page="./Index" asp-route-provider="stripe" asp-route-search="@Model.Search">Stripe (@Model.StripeCount)</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(provider == "flutterwave" ? "active" : "")"
+           asp-page="./Index" asp-route-provider="flutterwave" asp-route-search="@Model.Search">Flutterwave / Mobile Money (@Model.FlutterwaveCount)</a>
+    </li>
+</ul>
 
-<table class="table table-striped table-sm">
+<form method="get" class="row g-2 align-items-end mb-3">
+    @if (!string.IsNullOrEmpty(Model.ProviderFilter))
+    {
+        <input type="hidden" name="provider" value="@Model.ProviderFilter" />
+    }
+    <div class="col-md-6">
+        <label class="form-label">Recherche</label>
+        <input type="search" name="search" value="@Model.Search" class="form-control"
+               placeholder="Event ID, type, référence, statut…" />
+    </div>
+    <div class="col-md-auto">
+        <button type="submit" class="btn btn-outline-secondary">Filtrer</button>
+        @if (!string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.ProviderFilter))
+        {
+            <a asp-page="./Index" class="btn btn-link">Effacer</a>
+        }
+    </div>
+</form>
+
+@if (Model.Pagination.TotalCount > 0)
+{
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <small class="text-muted">@Model.Pagination.StartItem–@Model.Pagination.EndItem sur @Model.Pagination.TotalCount</small>
+        @if (Model.Pagination.TotalPages > 1)
+        {
+            <nav aria-label="Pagination">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(Model.Pagination.HasPrevious ? "" : "disabled")">
+                        <a class="page-link" href="@Model.Pagination.PageUrl(Model.Pagination.Page - 1)">‹</a>
+                    </li>
+                    @for (var p = 1; p <= Model.Pagination.TotalPages; p++)
+                    {
+                        <li class="page-item @(p == Model.Pagination.Page ? "active" : "")">
+                            <a class="page-link" href="@Model.Pagination.PageUrl(p)">@p</a>
+                        </li>
+                    }
+                    <li class="page-item @(Model.Pagination.HasNext ? "" : "disabled")">
+                        <a class="page-link" href="@Model.Pagination.PageUrl(Model.Pagination.Page + 1)">›</a>
+                    </li>
+                </ul>
+            </nav>
+        }
+    </div>
+}
+
+<table class="table table-striped table-sm align-middle">
     <thead>
         <tr>
             <th>Date</th>
+            <th>Provider</th>
             <th>Event ID</th>
             <th>Type</th>
+            <th>Référence</th>
             <th>Statut</th>
             <th>Traité le</th>
             <th>Erreur</th>
         </tr>
     </thead>
     <tbody>
-    @foreach (var item in Model.Events)
+    @if (Model.Events.Count == 0)
     {
         <tr>
+            <td colspan="8" class="text-muted text-center py-4">Aucun événement pour ce filtre.</td>
+        </tr>
+    }
+    @foreach (var item in Model.Events)
+    {
+        var badge = item.Provider == "stripe" ? "text-bg-primary" : "text-bg-success";
+        var label = item.Provider == "stripe" ? "Stripe" : "Flutterwave";
+        <tr>
             <td>@item.CreatedAt.ToString("g")</td>
-            <td><small>@item.StripeEventId</small></td>
+            <td><span class="badge @badge">@label</span></td>
+            <td><small>@item.EventId</small></td>
             <td>@item.EventType</td>
+            <td><small>@(item.Reference ?? "—")</small></td>
             <td>@item.ProcessingStatus</td>
-            <td>@(item.ProcessedAt?.ToString("g") ?? "-")</td>
-            <td>@item.ErrorMessage</td>
+            <td>@(item.ProcessedAt?.ToString("g") ?? "—")</td>
+            <td>@(item.ErrorMessage ?? "")</td>
         </tr>
     }
     </tbody>

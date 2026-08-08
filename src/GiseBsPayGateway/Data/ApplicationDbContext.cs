@@ -21,6 +21,7 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<CollectedTaxRecord> CollectedTaxRecords => Set<CollectedTaxRecord>();
     public DbSet<CollectedTaxLine> CollectedTaxLines => Set<CollectedTaxLine>();
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
+    public DbSet<FlutterwaveWebhookEvent> FlutterwaveWebhookEvents => Set<FlutterwaveWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
     public DbSet<ConnectedAccount> ConnectedAccounts => Set<ConnectedAccount>();
@@ -79,7 +80,9 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
         builder.Entity<PaymentTransaction>(e =>
         {
             e.HasIndex(x => x.PaymentCode).IsUnique();
+            e.HasIndex(x => x.FlutterwaveTxRef);
             e.Property(x => x.PaymentCode).HasMaxLength(50);
+            e.Property(x => x.Provider).HasMaxLength(30);
             e.Property(x => x.Currency).HasMaxLength(3);
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.OriginalAmount).HasPrecision(18, 2);
@@ -91,6 +94,11 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.StripeFee).HasPrecision(18, 2);
             e.Property(x => x.NetAmount).HasPrecision(18, 2);
             e.Property(x => x.StripeBalanceTransactionId).HasMaxLength(100);
+            e.Property(x => x.FlutterwaveTxRef).HasMaxLength(100);
+            e.Property(x => x.FlutterwaveTransactionId).HasMaxLength(100);
+            e.Property(x => x.MobileMoneyNetwork).HasMaxLength(40);
+            e.Property(x => x.MobileMoneyPhone).HasMaxLength(30);
+            e.Property(x => x.MobileMoneyCountry).HasMaxLength(2);
             e.Property(x => x.BillingCountry).HasMaxLength(2);
             e.Property(x => x.BillingState).HasMaxLength(50);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.ClientApplicationId);
@@ -191,6 +199,16 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.HasIndex(x => x.StripeEventId).IsUnique();
             e.Property(x => x.StripeEventId).HasMaxLength(100);
             e.Property(x => x.EventType).HasMaxLength(100);
+        });
+
+        builder.Entity<FlutterwaveWebhookEvent>(e =>
+        {
+            e.HasIndex(x => x.FlutterwaveEventId).IsUnique();
+            e.HasIndex(x => x.Reference);
+            e.Property(x => x.FlutterwaveEventId).HasMaxLength(200);
+            e.Property(x => x.EventType).HasMaxLength(100);
+            e.Property(x => x.Reference).HasMaxLength(200);
+            e.Property(x => x.ChargeId).HasMaxLength(200);
         });
 
         builder.Entity<AuditLog>(e =>

@@ -3,6 +3,7 @@ using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Services;
+using GiseBsPayGateway.Services.Flutterwave;
 using Microsoft.EntityFrameworkCore;
 
 namespace GiseBsPayGateway.Services;
@@ -17,6 +18,7 @@ public class PaymentService : IPaymentService
     private readonly IInvoiceLinkBuilder _invoiceLinkBuilder;
     private readonly ICollectedTaxService _collectedTaxService;
     private readonly IPricingPlanCurrencyVariantService _planCurrencyVariant;
+    private readonly IFlutterwaveMobileMoneyService _flutterwaveMobileMoney;
 
     public PaymentService(
         ApplicationDbContext db,
@@ -26,7 +28,8 @@ public class PaymentService : IPaymentService
         IInvoiceService invoiceService,
         IInvoiceLinkBuilder invoiceLinkBuilder,
         ICollectedTaxService collectedTaxService,
-        IPricingPlanCurrencyVariantService planCurrencyVariant)
+        IPricingPlanCurrencyVariantService planCurrencyVariant,
+        IFlutterwaveMobileMoneyService flutterwaveMobileMoney)
     {
         _db = db;
         _stripeService = stripeService;
@@ -36,6 +39,7 @@ public class PaymentService : IPaymentService
         _invoiceLinkBuilder = invoiceLinkBuilder;
         _collectedTaxService = collectedTaxService;
         _planCurrencyVariant = planCurrencyVariant;
+        _flutterwaveMobileMoney = flutterwaveMobileMoney;
     }
 
     public async Task<CheckoutSessionResponse> CreateCheckoutSessionAsync(ClientApplication app, CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default)
@@ -94,6 +98,7 @@ public class PaymentService : IPaymentService
             Status = PaymentStatus.Pending,
             Amount = plan.Amount,
             Currency = plan.Currency,
+            Provider = "stripe",
             Product = product,
             PricingPlan = plan,
             Customer = customer
@@ -154,6 +159,9 @@ public class PaymentService : IPaymentService
         {
             return null;
         }
+
+        if (payment.Provider == "flutterwave" && payment.Status == PaymentStatus.Pending)
+            await _flutterwaveMobileMoney.RefreshPendingAsync(payment, cancellationToken);
 
         var invoice = payment.Status == PaymentStatus.Succeeded
             ? await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken)

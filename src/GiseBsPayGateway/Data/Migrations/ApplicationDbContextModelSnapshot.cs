@@ -563,6 +563,58 @@ namespace GiseBsPayGateway.Data.Migrations
                     b.ToTable("Customers");
                 });
 
+            modelBuilder.Entity("GiseBsPayGateway.Entities.FlutterwaveWebhookEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChargeId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FlutterwaveEventId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProcessingStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FlutterwaveEventId")
+                        .IsUnique();
+
+                    b.HasIndex("Reference");
+
+                    b.ToTable("FlutterwaveWebhookEvents");
+                });
+
             modelBuilder.Entity("GiseBsPayGateway.Entities.MobileMoneyRecipient", b =>
                 {
                     b.Property<Guid>("Id")
@@ -910,9 +962,29 @@ namespace GiseBsPayGateway.Data.Migrations
                     b.Property<string>("FailureReason")
                         .HasColumnType("text");
 
+                    b.Property<string>("FlutterwaveTransactionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FlutterwaveTxRef")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<decimal?>("GrossAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("MobileMoneyCountry")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("MobileMoneyNetwork")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("MobileMoneyPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<decimal?>("NetAmount")
                         .HasPrecision(18, 2)
@@ -939,6 +1011,11 @@ namespace GiseBsPayGateway.Data.Migrations
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -975,6 +1052,8 @@ namespace GiseBsPayGateway.Data.Migrations
                     b.HasIndex("ClientApplicationId");
 
                     b.HasIndex("CustomerId");
+
+                    b.HasIndex("FlutterwaveTxRef");
 
                     b.HasIndex("PaymentCode")
                         .IsUnique();

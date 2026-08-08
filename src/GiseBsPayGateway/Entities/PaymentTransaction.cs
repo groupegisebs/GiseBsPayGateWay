@@ -30,10 +30,20 @@ public class PaymentTransaction : BaseEntity
     /// <summary>BoC rate used: 1 unit of OriginalCurrency = ExchangeRate CAD.</summary>
     public decimal? ExchangeRate { get; set; }
 
+    /// <summary>stripe (défaut) | flutterwave</summary>
+    public string Provider { get; set; } = "stripe";
+
     public string? StripeCheckoutSessionId { get; set; }
     public string? StripePaymentIntentId { get; set; }
     public string? StripeInvoiceId { get; set; }
     public string? StripeBalanceTransactionId { get; set; }
+
+    /// <summary>Référence Flutterwave (tx_ref / id charge).</summary>
+    public string? FlutterwaveTxRef { get; set; }
+    public string? FlutterwaveTransactionId { get; set; }
+    public string? MobileMoneyNetwork { get; set; }
+    public string? MobileMoneyPhone { get; set; }
+    public string? MobileMoneyCountry { get; set; }
 
     public string? FailureReason { get; set; }
     public DateTime? PaidAt { get; set; }

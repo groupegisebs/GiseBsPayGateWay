@@ -238,11 +238,17 @@ sudo chown ubuntu:ubuntu /opt/apps/gisebs-pay-gateway</code></pre>
         <h5>Configuration des clés</h5>
         <p>Saisissez les clés Stripe dans <a asp-page="/Admin/StripeSettings/Index">Stripe</a> (publishable, secret, webhook secret).</p>
 
-        <h5 class="mt-4">Webhook Stripe</h5>
-        <p>URL à configurer dans le dashboard Stripe :</p>
+        <h5 class="mt-4">Webhooks (Stripe vs Flutterwave)</h5>
+        <p>Les deux providers utilisent des endpoints distincts. Les événements sont listés dans
+            <a asp-page="/Admin/Webhooks/Index">Webhooks</a> avec filtre Stripe / Flutterwave.</p>
+        <p><strong>Stripe</strong> — dashboard Stripe :</p>
         <pre class="bg-light p-3 rounded"><code>https://pay.gisebs.com/api/webhooks/stripe</code></pre>
-        <p>Événements à activer :</p>
-        <p>Événements à activer :</p>
+        <p><strong>Flutterwave / Mobile Money</strong> — entreprise canadienne possible :
+            à l’inscription choisir <strong>Canada</strong> + <strong>Registered Business</strong>
+            (pas le parcours Nigeria / CAC). Payouts vers compte CAD/USD.</p>
+        <p>Webhook Flutterwave (secret = verif-hash) :</p>
+        <pre class="bg-light p-3 rounded"><code>https://pay.gisebs.com/api/webhooks/flutterwave</code></pre>
+        <p>Événements Stripe à activer :</p>
         <ul>
             <li><code>checkout.session.completed</code></li>
             <li><code>invoice.paid</code></li>
