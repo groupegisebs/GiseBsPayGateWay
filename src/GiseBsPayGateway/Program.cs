@@ -7,6 +7,7 @@ using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Middleware;
 using GiseBsPayGateway.Options;
 using GiseBsPayGateway.Services;
+using GiseBsPayGateway.Services.MobileMoney;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -35,6 +36,8 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<StripeSecretsOptions>(builder.Configuration.GetSection(StripeSecretsOptions.SectionName));
 builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKeyOptions.SectionName));
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
+builder.Services.Configure<MobileMoneyOptions>(builder.Configuration.GetSection(MobileMoneyOptions.SectionName));
+builder.Services.Configure<CamPaySecretsOptions>(builder.Configuration.GetSection(CamPaySecretsOptions.SectionName));
 
 if (builder.Environment.IsEnvironment("Testing"))
 {
@@ -156,6 +159,12 @@ builder.Services.AddScoped<IPayoutCallbackNotifier, PayoutCallbackNotifier>();
 builder.Services.AddScoped<IPayPalPayoutService, PayPalPayoutService>();
 builder.Services.AddScoped<IMobileMoneyPublicInfoService, MobileMoneyPublicInfoService>();
 builder.Services.AddScoped<IDisbursementQueueService, DisbursementQueueService>();
+builder.Services.AddSingleton<LocalSimulatedMobileMoneyGateway>();
+builder.Services.AddScoped<IMobileMoneyGateway, CamPayMobileMoneyGateway>();
+builder.Services.AddScoped<IMobileMoneyGateway, OrangeMoneyDirectGateway>();
+builder.Services.AddScoped<IMobileMoneyGateway, MtnMomoDirectGateway>();
+builder.Services.AddScoped<IMobileMoneyOrchestrator, MobileMoneyOrchestrator>();
+builder.Services.AddHttpClient("CamPay");
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();
