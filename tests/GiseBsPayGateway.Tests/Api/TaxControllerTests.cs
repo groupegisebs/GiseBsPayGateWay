@@ -76,17 +76,17 @@ public class TaxControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var rates = Assert.IsAssignableFrom<IReadOnlyList<AfricanTaxRateDto>>(ok.Value);
         Assert.True(rates.Count >= 50);
-        Assert.Contains(rates, r => r.CountryCode == "CM" && r.RatePercent == 19.25m);
+        Assert.Contains(rates, r => r.CountryCode == "CM" && r.RatePercent == 0m);
     }
 
     [Fact]
-    public void AfricaQuote_Cameroon_Ttc()
+    public void AfricaQuote_Cameroon_Exempt_TtcEqualsHt()
     {
         var controller = new TaxController(Mock.Of<ITaxService>(), Mock.Of<ICollectedTaxService>(), new AfricanTaxService());
         var result = controller.QuoteAfrica(new AfricanTaxQuoteRequest(5000m, "XAF", "CM"));
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var quote = Assert.IsType<AfricanTaxQuoteResponse>(ok.Value);
-        Assert.Equal(5963m, quote.AmountInclusive);
-        Assert.Equal(963m, quote.TaxAmount);
+        Assert.Equal(5000m, quote.AmountInclusive);
+        Assert.Equal(0m, quote.TaxAmount);
     }
 }

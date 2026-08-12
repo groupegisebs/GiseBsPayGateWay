@@ -33,11 +33,11 @@ public class MobileMoneyOrchestratorTests
         Assert.Contains("**", result.PhoneMasked);
         Assert.False(string.IsNullOrWhiteSpace(result.ProviderReference));
         Assert.DoesNotContain("690000000", result.PhoneMasked);
-        // HT 5000 XAF + TVA CM 19,25 % = TTC 5963
+        // HT 5000 XAF — Cameroun éducation exonérée (0 %) → TTC 5000
         Assert.Equal(5000m, result.AmountExclusive);
-        Assert.Equal(963m, result.TaxAmount);
-        Assert.Equal(5963m, result.Amount);
-        Assert.Equal(19.25m, result.TaxRatePercent);
+        Assert.Equal(0m, result.TaxAmount);
+        Assert.Equal(5000m, result.Amount);
+        Assert.Equal(0m, result.TaxRatePercent);
         Assert.Equal("CM", result.BillingCountryCode);
     }
 
@@ -55,7 +55,7 @@ public class MobileMoneyOrchestratorTests
             reference = charge.ProviderReference,
             external_reference = charge.PaymentCode,
             status = "SUCCESSFUL",
-            amount = 5963,
+            amount = 5000,
             currency = "XAF",
             @operator = "MTN"
         });
@@ -117,7 +117,7 @@ public class MobileMoneyOrchestratorTests
             reference = charge.ProviderReference,
             external_reference = charge.PaymentCode,
             status = "SUCCESSFUL",
-            amount = 5963,
+            amount = 5000,
             currency = "XAF"
         });
 

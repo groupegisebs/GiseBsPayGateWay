@@ -1,0 +1,111 @@
+@page
+@model GiseBsPayGateway.Pages.Admin.TaxRates.IndexModel
+@{
+    ViewData["Title"] = "Taux de taxe Afrique";
+    Layout = "_Layout";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="mb-1">Taux de taxe Afrique</h1>
+        <p class="text-muted mb-0">
+            Le montant encaissé est toujours <strong>TTC = HT + taxe</strong>.
+            Un taux à <strong>0 %</strong> signifie exonéré (TTC = HT).
+            Cameroun : exonération éducation par défaut.
+        </p>
+    </div>
+    <a asp-page="/Admin/CollectedTaxes/Index" class="btn btn-outline-secondary">Taxes collectées</a>
+</div>
+
+@if (TempData["TaxRateMessage"] is string ok)
+{
+    <div class="alert alert-success">@ok</div>
+}
+@if (TempData["TaxRateError"] is string err)
+{
+    <div class="alert alert-danger">@err</div>
+}
+
+<div class="table-responsive">
+    <table class="table table-striped table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Pays</th>
+                <th>Code</th>
+                <th>Taxe</th>
+                <th class="text-end">Taux appliqué</th>
+                <th class="text-end">Taux standard</th>
+                <th>Notes</th>
+                <th style="min-width: 280px;">Ajuster</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var rate in Model.Rates)
+        {
+            var isExempt = rate.RatePercent == 0;
+            <tr class="@(isExempt ? "table-success" : null)">
+                <td>@rate.CountryName</td>
+                <td><code>@rate.CountryCode</code></td>
+                <td>@rate.TaxName</td>
+                <td class="text-end">
+                    @if (isExempt)
+                    {
+                        <span class="badge text-bg-success">0 % — exonéré</span>
+                    }
+                    else
+                    {
+                        <span>@rate.RatePercent.ToString("0.####") %</span>
+                    }
+                </td>
+                <td class="text-end">@rate.StandardRatePercent.ToString("0.####") %</td>
+                <td><small class="text-muted">@(rate.Notes ?? "—")</small></td>
+                <td>
+                    <form method="post" asp-page-handler="Save" class="row g-1 align-items-center">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="Input.CountryCode" value="@rate.CountryCode" />
+                        <div class="col-auto">
+                            <input class="form-control form-control-sm"
+                                   style="width: 5.5rem"
+                                   type="number"
+                                   step="0.01"
+                                   min="0"
+                                   max="100"
+                                   name="Input.RatePercent"
+                                   value="@rate.RatePercent.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   title="0 = exonéré" />
+                        </div>
+                        <div class="col">
+                            <input class="form-control form-control-sm"
+                                   type="text"
+                                   name="Input.Notes"
+                                   value="@rate.Notes"
+                                   placeholder="Notes" />
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary">Enregistrer</button>
+                        </div>
+                    </form>
+                    <div class="mt-1">
+                        @if (!isExempt)
+                        {
+                            <form method="post" asp-page-handler="Exempt" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="countryCode" value="@rate.CountryCode" />
+                                <button type="submit" class="btn btn-sm btn-outline-success">Exonérer (0 %)</button>
+                            </form>
+                        }
+                        @if (rate.RatePercent != rate.StandardRatePercent)
+                        {
+                            <form method="post" asp-page-handler="Restore" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="countryCode" value="@rate.CountryCode" />
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Restaurer @rate.StandardRatePercent.ToString("0.####") %</button>
+                            </form>
+                        }
+                    </div>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

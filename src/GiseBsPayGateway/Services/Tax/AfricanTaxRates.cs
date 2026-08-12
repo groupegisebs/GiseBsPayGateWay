@@ -12,9 +12,14 @@ public static class AfricanTaxRates
         string CountryNameFr,
         string TaxName,
         decimal RatePercent,
-        string Notes = "");
+        string Notes = "",
+        decimal? StandardRatePercent = null)
+    {
+        /// <summary>Taux officiel de référence (restauration admin).</summary>
+        public decimal PublishedStandardRate => StandardRatePercent ?? RatePercent;
+    }
 
-    /// <summary>Taux standard (%). 0 = pas de TVA nationale standard applicable / non en vigueur.</summary>
+    /// <summary>Taux standard (%). 0 = exonéré / pas de TVA applicable.</summary>
     public static readonly IReadOnlyDictionary<string, Rate> ByCountry =
         new Dictionary<string, Rate>(StringComparer.OrdinalIgnoreCase)
         {
@@ -25,7 +30,11 @@ public static class AfricanTaxRates
             ["BF"] = new("BF", "Burkina Faso", "TVA", 18.00m),
             ["BI"] = new("BI", "Burundi", "TVA", 18.00m),
             ["CV"] = new("CV", "Cabo Verde", "IVA", 15.00m),
-            ["CM"] = new("CM", "Cameroun", "TVA", 19.25m, "Taux standard Cameroun 19,25 %"),
+            // Produits / services éducatifs : exonérés de TVA au Cameroun (défaut 0 %).
+            // Taux standard publié 19,25 % restaurable depuis l'administration.
+            ["CM"] = new("CM", "Cameroun", "TVA", 0.00m,
+                "Exonération éducation (défaut). Taux standard publié 19,25 % — ajustable en admin.",
+                19.25m),
             ["CF"] = new("CF", "Centrafrique", "TVA", 19.00m),
             ["TD"] = new("TD", "Tchad", "TVA", 18.00m),
             ["KM"] = new("KM", "Comores", "TVA", 10.00m),
@@ -72,7 +81,6 @@ public static class AfricanTaxRates
             ["UG"] = new("UG", "Ouganda", "VAT", 18.00m),
             ["ZM"] = new("ZM", "Zambie", "VAT", 16.00m),
             ["ZW"] = new("ZW", "Zimbabwe", "VAT", 15.00m),
-            // Territoires / États additionnels souvent listés en Afrique
             ["EH"] = new("EH", "Sahara occidental", "TVA", 0.00m, "Régime fiscal à confirmer"),
         };
 

@@ -170,7 +170,7 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();
 builder.Services.AddScoped<ICollectedTaxService, CollectedTaxService>();
-builder.Services.AddSingleton<IAfricanTaxService, AfricanTaxService>();
+builder.Services.AddScoped<IAfricanTaxService, AfricanTaxService>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();

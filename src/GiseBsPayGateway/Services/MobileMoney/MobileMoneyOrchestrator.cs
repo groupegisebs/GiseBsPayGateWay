@@ -441,7 +441,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             ?? _localSim;
     }
 
-    private static MobileMoneyChargeResponse MapCharge(
+    private MobileMoneyChargeResponse MapCharge(
         PaymentTransaction payment,
         string? instruction = null,
         string? ussd = null)
@@ -470,7 +470,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             payment.BillingCountry);
     }
 
-    private static MobileMoneyStatusResponse MapStatus(PaymentTransaction payment)
+    private MobileMoneyStatusResponse MapStatus(PaymentTransaction payment)
     {
         var exclusive = payment.AmountSubtotal;
         var taxAmount = payment.TaxAmount;
@@ -491,16 +491,15 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             payment.FailureReason,
             exclusive,
             taxAmount,
-            rate > 0 ? rate : null,
+            string.IsNullOrWhiteSpace(payment.BillingCountry) ? null : rate,
             taxName,
             payment.BillingCountry);
     }
 
-    /// <summary>Taux catalogue (pas le taux effectif après arrondi monétaire).</summary>
-    private static (decimal RatePercent, string? TaxName) ResolveCatalogTax(string? billingCountry)
+    /// <summary>Taux catalogue admin / seed (pas le taux effectif après arrondi monétaire).</summary>
+    private (decimal RatePercent, string? TaxName) ResolveCatalogTax(string? billingCountry)
     {
-        if (!string.IsNullOrWhiteSpace(billingCountry) &&
-            AfricanTaxRates.TryGet(billingCountry, out var rateInfo))
+        if (_africanTax.TryGetRate(billingCountry, out var rateInfo))
             return (rateInfo.RatePercent, rateInfo.TaxName);
         return (0m, null);
     }

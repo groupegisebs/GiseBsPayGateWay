@@ -24,6 +24,7 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<MobileMoneyWebhookEvent> MobileMoneyWebhookEvents => Set<MobileMoneyWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
+    public DbSet<AfricanTaxRateSetting> AfricanTaxRateSettings => Set<AfricanTaxRateSetting>();
     public DbSet<ConnectedAccount> ConnectedAccounts => Set<ConnectedAccount>();
     public DbSet<ConnectTransfer> ConnectTransfers => Set<ConnectTransfer>();
     public DbSet<SellerDisbursementRequest> SellerDisbursementRequests => Set<SellerDisbursementRequest>();
@@ -230,6 +231,17 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.PublishableKey).HasMaxLength(500);
             e.Property(x => x.SecretKey).HasMaxLength(500);
             e.Property(x => x.WebhookSecret).HasMaxLength(500);
+        });
+
+        builder.Entity<AfricanTaxRateSetting>(e =>
+        {
+            e.HasIndex(x => x.CountryCode).IsUnique();
+            e.Property(x => x.CountryCode).HasMaxLength(2);
+            e.Property(x => x.CountryNameFr).HasMaxLength(100);
+            e.Property(x => x.TaxName).HasMaxLength(40);
+            e.Property(x => x.RatePercent).HasPrecision(9, 4);
+            e.Property(x => x.StandardRatePercent).HasPrecision(9, 4);
+            e.Property(x => x.Notes).HasMaxLength(500);
         });
 
         builder.Entity<ConnectedAccount>(e =>

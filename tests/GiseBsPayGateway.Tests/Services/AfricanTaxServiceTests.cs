@@ -7,13 +7,13 @@ public class AfricanTaxServiceTests
     private readonly AfricanTaxService _sut = new();
 
     [Fact]
-    public void Cameroon_Vat_1925_Inclusive()
+    public void Cameroon_Education_Exempt_ZeroTax()
     {
         var result = _sut.Calculate(5000m, "XAF", "CM");
         Assert.Equal(5000m, result.AmountExclusive);
-        Assert.Equal(963m, result.TaxAmount);
-        Assert.Equal(5963m, result.AmountInclusive);
-        Assert.Equal(19.25m, result.TaxRatePercent);
+        Assert.Equal(0m, result.TaxAmount);
+        Assert.Equal(5000m, result.AmountInclusive);
+        Assert.Equal(0m, result.TaxRatePercent);
         Assert.Equal("TVA", result.TaxName);
     }
 
@@ -40,7 +40,7 @@ public class AfricanTaxServiceTests
     {
         var rates = _sut.ListRates();
         Assert.True(rates.Count >= 50);
-        Assert.Contains(rates, r => r.CountryCode == "CM" && r.RatePercent == 19.25m);
+        Assert.Contains(rates, r => r.CountryCode == "CM" && r.RatePercent == 0m && r.StandardRatePercent == 19.25m);
         Assert.Contains(rates, r => r.CountryCode == "SN");
         Assert.Contains(rates, r => r.CountryCode == "NG");
         Assert.Contains(rates, r => r.CountryCode == "ZA");
@@ -53,7 +53,7 @@ public class AfricanTaxServiceTests
     }
 
     [Fact]
-    public void AmountToPay_AlwaysIncludesTax()
+    public void AmountToPay_AlwaysIncludesTax_ExemptMeansTtcEqualsHt()
     {
         foreach (var rate in AfricanTaxRates.AllOrdered())
         {

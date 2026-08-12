@@ -2,6 +2,7 @@ using GiseBsPayGateway.Data;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Options;
 using GiseBsPayGateway.Services;
+using GiseBsPayGateway.Services.Tax;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -82,6 +83,14 @@ public static class DbSeeder
 
             await db.SaveChangesAsync();
         }
+
+        await EnsureAfricanTaxRatesAsync(scope.ServiceProvider);
+    }
+
+    private static async Task EnsureAfricanTaxRatesAsync(IServiceProvider services)
+    {
+        var tax = services.GetRequiredService<IAfricanTaxService>();
+        await tax.EnsureSeededAsync();
     }
 
     private static async Task EnsureAdminUserAsync(
