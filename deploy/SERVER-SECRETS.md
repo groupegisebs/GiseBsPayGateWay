@@ -14,7 +14,9 @@ Les secrets sensibles **ne doivent pas** être dans GitHub. Seuls SSH et la conn
 | Connection string PostgreSQL | Secret GitHub `GISEBSPAY_CONNECTION_STRING` | Oui (Actions) → copié dans `app.env` sur le serveur |
 | **Stripe** (pk, sk, webhook) | **`/opt/apps/gisebs-pay-gateway/secrets.json`** | **Non** |
 | **JWT** (optionnel) | Même fichier `secrets.json` | **Non** |
-| **CamPay** (username, password, webhook) | Même fichier `secrets.json` → `MobileMoney:CamPay` | **Non** |
+| **Orange Money** (ClientId/Secret, MerchantKey) | Même fichier `secrets.json` → `MobileMoney:Orange` | **Non** |
+| **MTN MoMo** (SubscriptionKey, ApiUser, ApiKey) | Même fichier `secrets.json` → `MobileMoney:Mtn` | **Non** |
+| **CamPay** (legacy) | `MobileMoney:CamPay` si réactivé | **Non** |
 | Mots de passe admin | Base PostgreSQL (seed initial) | Non |
 
 ---

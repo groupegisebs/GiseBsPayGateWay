@@ -71,8 +71,19 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         if (string.IsNullOrEmpty(channel))
             throw new InvalidOperationException("Canal invalide. Utilisez ORANGE ou MTN.");
 
-        if (!MobileMoneyPhoneValidator.TryNormalizeCameroonPhone(request.PhoneNumber, out var phone, out var masked))
-            throw new InvalidOperationException("Numéro camerounais invalide. Format attendu : +2376XXXXXXXX.");
+        string phone = "";
+        string masked = "—";
+        if (channel == "MTN")
+        {
+            if (!MobileMoneyPhoneValidator.TryNormalizeCameroonPhone(request.PhoneNumber ?? "", out phone, out masked))
+                throw new InvalidOperationException("Numéro camerounais invalide. Format attendu : +2376XXXXXXXX.");
+        }
+        else if (!string.IsNullOrWhiteSpace(request.PhoneNumber) &&
+                 MobileMoneyPhoneValidator.TryNormalizeCameroonPhone(request.PhoneNumber, out var orangePhone, out var orangeMasked))
+        {
+            phone = orangePhone;
+            masked = orangeMasked;
+        }
 
         var billingCountry = string.IsNullOrWhiteSpace(request.BillingCountryCode)
             ? (_options.Country ?? "CM")
@@ -124,7 +135,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
                 Email = request.Email,
                 FullName = request.FullName,
                 ExternalUserId = request.ExternalUserId,
-                Phone = masked
+                Phone = masked == "—" ? null : masked
             };
             _db.Customers.Add(customer);
             await _db.SaveChangesAsync(cancellationToken);
@@ -138,7 +149,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        var gateway = ResolveActiveGateway();
+        var (gateway, providerCode) = ResolveGatewayForChannel(channel);
         var paymentCode = $"PAY-{app.AppCode.ToUpperInvariant()}-{Guid.NewGuid():N}"[..32];
         var expires = DateTime.UtcNow.AddMinutes(Math.Max(5, _options.ChargeExpiryMinutes));
 
@@ -155,7 +166,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             TaxAmount = tax.TaxAmount,
             GrossAmount = tax.AmountInclusive,
             Currency = plan.Currency,
-            Provider = gateway.ProviderCode,
+            Provider = providerCode,
             MobileMoneyChannel = channel,
             PhoneMasked = masked,
             BillingCountry = tax.CountryCode,
@@ -172,11 +183,14 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         var init = await gateway.InitiateAsync(new MobileMoneyPaymentRequest(
             paymentCode,
             channel,
-            phone,
+            string.IsNullOrEmpty(phone) ? "237600000000" : phone,
             tax.AmountInclusive,
             "XAF",
             request.Description ?? $"Paiement {paymentCode}",
-            payment.IdempotencyKey), cancellationToken);
+            payment.IdempotencyKey,
+            request.ReturnUrl,
+            request.CancelUrl,
+            null), cancellationToken);
 
         if (!init.Success && init.NotSupported)
         {
@@ -213,10 +227,10 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             nameof(PaymentTransaction),
             payment.Id.ToString(),
             true,
-            $"PaymentCode={paymentCode};Channel={channel};Provider={gateway.ProviderCode};Status={payment.Status};Country={tax.CountryCode};HT={tax.AmountExclusive};Tax={tax.TaxAmount};TTC={tax.AmountInclusive}",
+            $"PaymentCode={paymentCode};Channel={channel};Provider={providerCode};Status={payment.Status};Country={tax.CountryCode};HT={tax.AmountExclusive};Tax={tax.TaxAmount};TTC={tax.AmountInclusive}",
             app.AppCode);
 
-        return MapCharge(payment, init.Instruction, init.UssdHint);
+        return MapCharge(payment, init.Instruction, init.UssdHint, init.PaymentUrl);
     }
 
     public async Task<MobileMoneyStatusResponse?> RefreshStatusAsync(
@@ -268,17 +282,22 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         HttpRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (provider is "orange" or "mtn")
-            return (StatusCodes.Status501NotImplemented, new { error = $"Webhook {provider} non activé (phase 2)." });
+        var providerNorm = provider.Trim().ToLowerInvariant();
+        IMobileMoneyGateway gateway;
+        string providerCode;
+        try
+        {
+            (gateway, providerCode) = ResolveWebhookGateway(providerNorm);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (StatusCodes.Status404NotFound, new { error = ex.Message });
+        }
 
-        if (!string.Equals(provider, "campay", StringComparison.OrdinalIgnoreCase))
-            return (StatusCodes.Status404NotFound, new { error = "Fournisseur inconnu." });
-
-        var gateway = ResolveActiveGateway();
         var validation = await gateway.ValidateWebhookAsync(request, cancellationToken);
         if (!validation.IsValid)
         {
-            _logger.LogWarning("Webhook CamPay rejeté : {Error}", validation.ErrorMessage);
+            _logger.LogWarning("Webhook {Provider} rejeté : {Error}", providerNorm, validation.ErrorMessage);
             return (StatusCodes.Status401Unauthorized, new { error = "Signature invalide." });
         }
 
@@ -289,7 +308,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Parse webhook CamPay échoué");
+            _logger.LogWarning(ex, "Parse webhook {Provider} échoué", providerNorm);
             return (StatusCodes.Status401Unauthorized, new { error = ex.Message });
         }
 
@@ -301,7 +320,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         if (!string.IsNullOrWhiteSpace(evt.ProviderEventId))
         {
             var dupEvent = await _db.MobileMoneyWebhookEvents.AnyAsync(
-                x => x.Provider == CamPayMobileMoneyGateway.Code && x.ProviderEventId == evt.ProviderEventId,
+                x => x.Provider == providerCode && x.ProviderEventId == evt.ProviderEventId,
                 cancellationToken);
             if (dupEvent)
                 return (StatusCodes.Status200OK, new { received = true, duplicate = true });
@@ -309,7 +328,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
 
         var webhookRow = new MobileMoneyWebhookEvent
         {
-            Provider = CamPayMobileMoneyGateway.Code,
+            Provider = providerCode,
             ProviderEventId = evt.ProviderEventId,
             EventType = evt.EventType,
             PayloadHash = evt.PayloadHash,
@@ -345,7 +364,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             nameof(PaymentTransaction),
             payment.Id.ToString(),
             true,
-            $"Status={payment.Status};ProviderRef={payment.ProviderReference}",
+            $"Provider={providerCode};Status={payment.Status};ProviderRef={payment.ProviderReference}",
             payment.ClientApplication?.AppCode);
 
         return (StatusCodes.Status200OK, new { received = true, paymentCode = payment.PaymentCode, status = payment.Status.ToString() });
@@ -419,32 +438,86 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         return null;
     }
 
-    private IMobileMoneyGateway ResolveActiveGateway()
+    private (IMobileMoneyGateway Gateway, string ProviderCode) ResolveWebhookGateway(string providerNorm) =>
+        providerNorm switch
+        {
+            "orange" => ResolveGatewayForChannel("ORANGE"),
+            "mtn" => ResolveGatewayForChannel("MTN"),
+            "campay" when _options.Providers.CamPay.Enabled =>
+                (IsLocalEnv(_options.Providers.CamPay.Environment)
+                    ? _localSim
+                    : _gateways.First(g => g is CamPayMobileMoneyGateway),
+                    CamPayMobileMoneyGateway.Code),
+            _ => throw new InvalidOperationException($"Fournisseur webhook inconnu ou désactivé : {providerNorm}.")
+        };
+
+    private (IMobileMoneyGateway Gateway, string ProviderCode) ResolveGatewayForChannel(string channel)
     {
-        var campay = _options.Providers.CamPay;
-        if (!campay.Enabled)
-            throw new InvalidOperationException("CamPay est désactivé.");
+        if (_options.DefaultProvider.Equals("CamPay", StringComparison.OrdinalIgnoreCase) &&
+            _options.Providers.CamPay.Enabled)
+        {
+            if (IsLocalEnv(_options.Providers.CamPay.Environment))
+                return (_localSim, CamPayMobileMoneyGateway.Code);
+            return (_gateways.First(g => g is CamPayMobileMoneyGateway), CamPayMobileMoneyGateway.Code);
+        }
 
-        if (campay.Environment.Equals("Local", StringComparison.OrdinalIgnoreCase))
-            return _localSim;
+        if (channel == "ORANGE")
+        {
+            var opt = _options.Providers.OrangeDirect;
+            if (!opt.Enabled)
+                throw new InvalidOperationException("Orange Money WebPay est désactivé.");
+            if (IsLocalEnv(opt.Environment))
+                return (_localSim, OrangeMoneyDirectGateway.Code);
+            return (_gateways.First(g => g is OrangeMoneyDirectGateway), OrangeMoneyDirectGateway.Code);
+        }
 
-        return _gateways.First(g => g is CamPayMobileMoneyGateway);
+        if (channel == "MTN")
+        {
+            var opt = _options.Providers.MtnDirect;
+            if (!opt.Enabled)
+                throw new InvalidOperationException("MTN MoMo Collections est désactivé.");
+            if (IsLocalEnv(opt.Environment))
+                return (_localSim, MtnMomoDirectGateway.Code);
+            return (_gateways.First(g => g is MtnMomoDirectGateway), MtnMomoDirectGateway.Code);
+        }
+
+        throw new InvalidOperationException("Canal Mobile Money non supporté.");
     }
 
     private IMobileMoneyGateway ResolveGatewayByCode(string providerCode)
     {
-        if (providerCode.Equals(CamPayMobileMoneyGateway.Code, StringComparison.OrdinalIgnoreCase) &&
-            _options.Providers.CamPay.Environment.Equals("Local", StringComparison.OrdinalIgnoreCase))
-            return _localSim;
+        if (providerCode.Equals(OrangeMoneyDirectGateway.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsLocalEnv(_options.Providers.OrangeDirect.Environment))
+                return _localSim;
+            return _gateways.First(g => g is OrangeMoneyDirectGateway);
+        }
 
-        return _gateways.FirstOrDefault(g => g.ProviderCode.Equals(providerCode, StringComparison.OrdinalIgnoreCase))
-            ?? _localSim;
+        if (providerCode.Equals(MtnMomoDirectGateway.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsLocalEnv(_options.Providers.MtnDirect.Environment))
+                return _localSim;
+            return _gateways.First(g => g is MtnMomoDirectGateway);
+        }
+
+        if (providerCode.Equals(CamPayMobileMoneyGateway.Code, StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsLocalEnv(_options.Providers.CamPay.Environment))
+                return _localSim;
+            return _gateways.FirstOrDefault(g => g is CamPayMobileMoneyGateway) ?? _localSim;
+        }
+
+        return _localSim;
     }
+
+    private static bool IsLocalEnv(string environment) =>
+        environment.Equals("Local", StringComparison.OrdinalIgnoreCase);
 
     private MobileMoneyChargeResponse MapCharge(
         PaymentTransaction payment,
         string? instruction = null,
-        string? ussd = null)
+        string? ussd = null,
+        string? paymentUrl = null)
     {
         var exclusive = payment.AmountSubtotal ?? payment.Amount;
         var taxAmount = payment.TaxAmount ?? 0m;
@@ -467,7 +540,8 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             taxAmount,
             rate,
             taxName,
-            payment.BillingCountry);
+            payment.BillingCountry,
+            paymentUrl);
     }
 
     private MobileMoneyStatusResponse MapStatus(PaymentTransaction payment)

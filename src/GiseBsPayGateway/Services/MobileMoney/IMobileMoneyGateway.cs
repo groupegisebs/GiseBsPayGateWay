@@ -36,7 +36,10 @@ public sealed record MobileMoneyPaymentRequest(
     decimal Amount,
     string Currency,
     string Description,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    string? ReturnUrl = null,
+    string? CancelUrl = null,
+    string? NotifUrl = null);
 
 public sealed record PaymentInitiationResult(
     bool Success,
@@ -47,7 +50,8 @@ public sealed record PaymentInitiationResult(
     string? UssdHint,
     string? FailureCode,
     string? FailureMessage,
-    bool NotSupported = false);
+    bool NotSupported = false,
+    string? PaymentUrl = null);
 
 public sealed record PaymentStatusResult(
     bool Success,

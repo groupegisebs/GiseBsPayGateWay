@@ -11,6 +11,7 @@ using GiseBsPayGateway.Services.Tax;
 using GiseBsPayGateway.Tests.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -39,6 +40,7 @@ public class MobileMoneyOrchestratorTests
         Assert.Equal(5000m, result.Amount);
         Assert.Equal(0m, result.TaxRatePercent);
         Assert.Equal("CM", result.BillingCountryCode);
+        Assert.False(string.IsNullOrWhiteSpace(result.PaymentUrl));
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public class MobileMoneyOrchestratorTests
         });
 
         var http = CreateHttpRequest(payload);
-        var (status, _) = await orch.HandleWebhookAsync("campay", http.Request);
+        var (status, _) = await orch.HandleWebhookAsync("mtn", http.Request);
         Assert.Equal(StatusCodes.Status200OK, status);
 
         var payment = await db.PaymentTransactions.SingleAsync(x => x.PaymentCode == charge.PaymentCode);
@@ -89,7 +91,7 @@ public class MobileMoneyOrchestratorTests
         var (app, orch) = await CreateSutAsync(db);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            orch.ChargeAsync(app, ChargeRequest(phone: "+33123456789"), "idem-bad"));
+            orch.ChargeAsync(app, ChargeRequest(channel: "MTN", phone: "+33123456789"), "idem-bad"));
     }
 
     [Fact]
@@ -124,7 +126,7 @@ public class MobileMoneyOrchestratorTests
         for (var i = 0; i < 10; i++)
         {
             var http = CreateHttpRequest(payload);
-            var (status, _) = await orch.HandleWebhookAsync("campay", http.Request);
+            var (status, _) = await orch.HandleWebhookAsync("mtn", http.Request);
             Assert.Equal(StatusCodes.Status200OK, status);
         }
 
@@ -148,7 +150,7 @@ public class MobileMoneyOrchestratorTests
             currency = "XAF"
         });
 
-        await orch.HandleWebhookAsync("campay", CreateHttpRequest(payload).Request);
+        await orch.HandleWebhookAsync("mtn", CreateHttpRequest(payload).Request);
 
         var payment = await db.PaymentTransactions.SingleAsync();
         Assert.Equal(PaymentStatus.RequiresReview, payment.Status);
@@ -187,22 +189,43 @@ public class MobileMoneyOrchestratorTests
     }
 
     [Fact]
-    public async Task OrangeDirect_NotSupported()
+    public async Task OrangeDirect_Local_HealthOk()
     {
-        var gw = new OrangeMoneyDirectGateway();
-        var result = await gw.InitiateAsync(new MobileMoneyPaymentRequest(
-            "PAY-1", "ORANGE", "237690000000", 1000, "XAF", "test", null));
-        Assert.True(result.NotSupported);
-        Assert.False(result.Success);
+        var options = MsOptions.Create(new MobileMoneyOptions
+        {
+            Providers = new MobileMoneyProvidersOptions
+            {
+                OrangeDirect = new OrangeDirectProviderOptions { Enabled = true, Environment = "Local" }
+            }
+        });
+        var gw = new OrangeMoneyDirectGateway(
+            Mock.Of<IHttpClientFactory>(),
+            options,
+            MsOptions.Create(new OrangeSecretsOptions()),
+            Mock.Of<IConfiguration>(),
+            NullLogger<OrangeMoneyDirectGateway>.Instance);
+        var health = await gw.GetHealthAsync();
+        Assert.True(health.Healthy);
     }
 
     [Fact]
-    public async Task MtnDirect_NotSupported()
+    public async Task MtnDirect_Local_HealthOk()
     {
-        var gw = new MtnMomoDirectGateway();
-        var result = await gw.InitiateAsync(new MobileMoneyPaymentRequest(
-            "PAY-1", "MTN", "237670000000", 1000, "XAF", "test", null));
-        Assert.True(result.NotSupported);
+        var options = MsOptions.Create(new MobileMoneyOptions
+        {
+            Providers = new MobileMoneyProvidersOptions
+            {
+                MtnDirect = new MtnDirectProviderOptions { Enabled = true, Environment = "Local" }
+            }
+        });
+        var gw = new MtnMomoDirectGateway(
+            Mock.Of<IHttpClientFactory>(),
+            options,
+            MsOptions.Create(new MtnSecretsOptions()),
+            Mock.Of<IConfiguration>(),
+            NullLogger<MtnMomoDirectGateway>.Instance);
+        var health = await gw.GetHealthAsync();
+        Assert.True(health.Healthy);
     }
 
     [Fact]
@@ -268,11 +291,14 @@ public class MobileMoneyOrchestratorTests
 
         var options = MsOptions.Create(new MobileMoneyOptions
         {
+            DefaultProvider = "Direct",
             Currency = "XAF",
             ChargeExpiryMinutes = 15,
             Providers = new MobileMoneyProvidersOptions
             {
-                CamPay = new CamPayProviderOptions { Enabled = true, Environment = "Local" }
+                CamPay = new CamPayProviderOptions { Enabled = false, Environment = "Local" },
+                OrangeDirect = new OrangeDirectProviderOptions { Enabled = true, Environment = "Local" },
+                MtnDirect = new MtnDirectProviderOptions { Enabled = true, Environment = "Local" }
             }
         });
 
@@ -284,8 +310,18 @@ public class MobileMoneyOrchestratorTests
                 options,
                 MsOptions.Create(new CamPaySecretsOptions()),
                 NullLogger<CamPayMobileMoneyGateway>.Instance),
-            new OrangeMoneyDirectGateway(),
-            new MtnMomoDirectGateway()
+            new OrangeMoneyDirectGateway(
+                Mock.Of<IHttpClientFactory>(),
+                options,
+                MsOptions.Create(new OrangeSecretsOptions()),
+                Mock.Of<IConfiguration>(),
+                NullLogger<OrangeMoneyDirectGateway>.Instance),
+            new MtnMomoDirectGateway(
+                Mock.Of<IHttpClientFactory>(),
+                options,
+                MsOptions.Create(new MtnSecretsOptions()),
+                Mock.Of<IConfiguration>(),
+                NullLogger<MtnMomoDirectGateway>.Instance)
         };
 
         var orch = new MobileMoneyOrchestrator(

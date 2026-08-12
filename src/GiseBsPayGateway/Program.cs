@@ -39,6 +39,8 @@ builder.Services.Configure<ApiKeyOptions>(builder.Configuration.GetSection(ApiKe
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 builder.Services.Configure<MobileMoneyOptions>(builder.Configuration.GetSection(MobileMoneyOptions.SectionName));
 builder.Services.Configure<CamPaySecretsOptions>(builder.Configuration.GetSection(CamPaySecretsOptions.SectionName));
+builder.Services.Configure<OrangeSecretsOptions>(builder.Configuration.GetSection(OrangeSecretsOptions.SectionName));
+builder.Services.Configure<MtnSecretsOptions>(builder.Configuration.GetSection(MtnSecretsOptions.SectionName));
 
 if (builder.Environment.IsEnvironment("Testing"))
 {
@@ -166,6 +168,8 @@ builder.Services.AddScoped<IMobileMoneyGateway, OrangeMoneyDirectGateway>();
 builder.Services.AddScoped<IMobileMoneyGateway, MtnMomoDirectGateway>();
 builder.Services.AddScoped<IMobileMoneyOrchestrator, MobileMoneyOrchestrator>();
 builder.Services.AddHttpClient("CamPay");
+builder.Services.AddHttpClient("MtnMoMo");
+builder.Services.AddHttpClient("OrangeMoney");
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();

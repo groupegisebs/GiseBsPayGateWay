@@ -50,10 +50,15 @@ public sealed class LocalSimulatedMobileMoneyGateway : IMobileMoneyGateway
         }
 
         var ussd = request.Channel == "ORANGE" ? "#150*50#" : "*126#";
+        var paymentUrl = request.Channel.Equals("ORANGE", StringComparison.OrdinalIgnoreCase)
+            ? $"https://local.simulator/orange-webpay?order={Uri.EscapeDataString(request.InternalReference)}&ref={providerRef}"
+            : null;
         return Task.FromResult(new PaymentInitiationResult(
             true, providerRef, PaymentStatus.PendingCustomerConfirmation, "PENDING",
-            "Consultez votre téléphone et confirmez la demande de paiement. Ne communiquez jamais votre code secret Mobile Money.",
-            ussd, null, null));
+            request.Channel.Equals("ORANGE", StringComparison.OrdinalIgnoreCase)
+                ? "Redirection simulée vers Orange Money WebPay."
+                : "Consultez votre téléphone et confirmez la demande de paiement. Ne communiquez jamais votre code secret Mobile Money.",
+            ussd, null, null, PaymentUrl: paymentUrl));
     }
 
     public Task<PaymentStatusResult> GetStatusAsync(

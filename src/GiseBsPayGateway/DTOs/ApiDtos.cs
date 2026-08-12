@@ -286,7 +286,7 @@ public record PayPalOAuthStartRequest(string ExternalReference, string? ReturnUr
 public record PayPalOAuthStartResponse(string AuthorizationUrl, string State);
 public record PayPalLinkedAccountResponse(string ExternalReference, string? MaskedEmail, string Status, string? PayerId);
 
-// ── Collecte Mobile Money (CamPay / stubs Orange & MTN) ───────────────────────
+// ── Collecte Mobile Money (MTN MoMo Collections + Orange WebPay CM) ───────────
 
 public record MobileMoneyChargeRequest(
     string CustomerCode,
@@ -297,12 +297,15 @@ public record MobileMoneyChargeRequest(
     string PlanCode,
     /// <summary>ORANGE | MTN</summary>
     string Channel,
-    /// <summary>Numéro camerounais, ex. +237690000000</summary>
-    string PhoneNumber,
+    /// <summary>Numéro camerounais (requis pour MTN). Optionnel pour Orange WebPay.</summary>
+    string? PhoneNumber = null,
     /// <summary>Code ISO pays du payeur (ex. CM). Défaut : CM.</summary>
     string? BillingCountryCode = null,
     string? MetadataJson = null,
-    string? Description = null);
+    string? Description = null,
+    /// <summary>Retour navigateur après Orange WebPay.</summary>
+    string? ReturnUrl = null,
+    string? CancelUrl = null);
 
 public record MobileMoneyChargeResponse(
     string PaymentCode,
@@ -320,7 +323,9 @@ public record MobileMoneyChargeResponse(
     decimal TaxAmount = 0,
     decimal TaxRatePercent = 0,
     string? TaxName = null,
-    string? BillingCountryCode = null);
+    string? BillingCountryCode = null,
+    /// <summary>URL de paiement Orange WebPay (redirection client).</summary>
+    string? PaymentUrl = null);
 
 public record MobileMoneyStatusResponse(
     string PaymentCode,
