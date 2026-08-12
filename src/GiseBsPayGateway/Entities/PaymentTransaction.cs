@@ -30,7 +30,7 @@ public class PaymentTransaction : BaseEntity
     /// <summary>BoC rate used: 1 unit of OriginalCurrency = ExchangeRate CAD.</summary>
     public decimal? ExchangeRate { get; set; }
 
-    /// <summary>stripe (défaut) | flutterwave</summary>
+    /// <summary>stripe (défaut) | campay | orange_direct | mtn_direct</summary>
     public string Provider { get; set; } = "stripe";
 
     public string? StripeCheckoutSessionId { get; set; }
@@ -38,12 +38,25 @@ public class PaymentTransaction : BaseEntity
     public string? StripeInvoiceId { get; set; }
     public string? StripeBalanceTransactionId { get; set; }
 
-    /// <summary>Référence Flutterwave (tx_ref / id charge).</summary>
-    public string? FlutterwaveTxRef { get; set; }
-    public string? FlutterwaveTransactionId { get; set; }
-    public string? MobileMoneyNetwork { get; set; }
-    public string? MobileMoneyPhone { get; set; }
-    public string? MobileMoneyCountry { get; set; }
+    /// <summary>ORANGE | MTN (collecte Mobile Money).</summary>
+    public string? MobileMoneyChannel { get; set; }
+
+    /// <summary>Numéro masqué uniquement (jamais le numéro complet).</summary>
+    public string? PhoneMasked { get; set; }
+
+    /// <summary>Référence fournisseur (ex. UUID CamPay).</summary>
+    public string? ProviderReference { get; set; }
+
+    /// <summary>Clé d'idempotence client (unique par application).</summary>
+    public string? IdempotencyKey { get; set; }
+
+    public DateTime? ExpiresAtUtc { get; set; }
+
+    /// <summary>Code d'échec normalisé (ex. INSUFFICIENT_FUNDS).</summary>
+    public string? FailureCode { get; set; }
+
+    /// <summary>Statut brut fournisseur (journal sécurisé).</summary>
+    public string? RawProviderStatus { get; set; }
 
     public string? FailureReason { get; set; }
     public DateTime? PaidAt { get; set; }

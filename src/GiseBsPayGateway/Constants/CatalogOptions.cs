@@ -42,15 +42,7 @@ public static class CatalogOptions
         new("try", "TRY — Livre turque"),
         new("idr", "IDR — Roupie indonésienne"),
         new("pen", "PEN — Sol péruvien"),
-        // Mobile Money (Flutterwave)
-        new("xof", "XOF — Franc CFA Ouest"),
-        new("xaf", "XAF — Franc CFA Centre"),
-        new("ghs", "GHS — Cedi ghanéen"),
-        new("kes", "KES — Shilling kenyan"),
-        new("rwf", "RWF — Franc rwandais"),
-        new("tzs", "TZS — Shilling tanzanien"),
-        new("ugx", "UGX — Shilling ougandais"),
-        new("zmw", "ZMW — Kwacha zambien")
+        new("xaf", "XAF — Franc CFA (BEAC)")
     ];
 
     /// <summary>Devises sans décimales (arrondi entier).</summary>

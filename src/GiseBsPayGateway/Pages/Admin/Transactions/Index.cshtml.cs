@@ -28,7 +28,7 @@ public class IndexModel : PageModel
     [BindProperty(SupportsGet = true, Name = "status")]
     public string? StatusFilter { get; set; }
 
-    /// <summary>stripe | flutterwave | vide = tous</summary>
+    /// <summary>stripe | vide = tous</summary>
     [BindProperty(SupportsGet = true, Name = "provider")]
     public string? ProviderFilter { get; set; }
 
@@ -38,7 +38,6 @@ public class IndexModel : PageModel
 
     public int PendingCount { get; private set; }
     public int StripeCount { get; private set; }
-    public int FlutterwaveCount { get; private set; }
 
     public record TransactionViewModel(
         Guid Id,
@@ -58,11 +57,7 @@ public class IndexModel : PageModel
         DateTime? PaidAt,
         string? InvoiceNumber,
         string? StripePaymentIntentId,
-        string? StripeCheckoutSessionId,
-        string? FlutterwaveTxRef,
-        string? FlutterwaveTransactionId,
-        string? MobileMoneyCountry,
-        string? MobileMoneyNetwork);
+        string? StripeCheckoutSessionId);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -77,7 +72,6 @@ public class IndexModel : PageModel
 
         PendingCount = await BuildQuery(search, "Pending", ProviderFilter).CountAsync(cancellationToken);
         StripeCount = await BuildQuery(search, StatusFilter, "stripe").CountAsync(cancellationToken);
-        FlutterwaveCount = await BuildQuery(search, StatusFilter, "flutterwave").CountAsync(cancellationToken);
 
         Transactions = await query
             .OrderByDescending(x => x.CreatedAt)
@@ -106,11 +100,7 @@ public class IndexModel : PageModel
                     .Select(i => i.InvoiceCode)
                     .FirstOrDefault(),
                 x.StripePaymentIntentId,
-                x.StripeCheckoutSessionId,
-                x.FlutterwaveTxRef,
-                x.FlutterwaveTransactionId,
-                x.MobileMoneyCountry,
-                x.MobileMoneyNetwork))
+                x.StripeCheckoutSessionId))
             .ToListAsync(cancellationToken);
     }
 
@@ -181,9 +171,6 @@ public class IndexModel : PageModel
                 EF.Functions.ILike(x.Provider, $"%{search}%") ||
                 (x.StripePaymentIntentId != null && EF.Functions.ILike(x.StripePaymentIntentId, $"%{search}%")) ||
                 (x.StripeCheckoutSessionId != null && EF.Functions.ILike(x.StripeCheckoutSessionId, $"%{search}%")) ||
-                (x.FlutterwaveTxRef != null && EF.Functions.ILike(x.FlutterwaveTxRef, $"%{search}%")) ||
-                (x.FlutterwaveTransactionId != null && EF.Functions.ILike(x.FlutterwaveTransactionId, $"%{search}%")) ||
-                (x.MobileMoneyCountry != null && EF.Functions.ILike(x.MobileMoneyCountry, $"%{search}%")) ||
                 _db.PaymentInvoices.Any(i => i.PaymentTransactionId == x.Id && EF.Functions.ILike(i.InvoiceCode, $"%{search}%")));
         }
 
@@ -207,7 +194,6 @@ public class IndexModel : PageModel
         return provider.Trim().ToLowerInvariant() switch
         {
             "stripe" => "stripe",
-            "flutterwave" or "mobilemoney" or "mm" => "flutterwave",
             _ => null
         };
     }

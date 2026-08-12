@@ -13,7 +13,6 @@ Les secrets sensibles **ne doivent pas** être dans GitHub. Seuls SSH et la conn
 | Clé SSH déploiement | Secret GitHub `SSH_PRIVATE_KEY_UBUNTU1` ou `GISEBSPAY_SSH_PRIVATE_KEY` | Oui (Actions) |
 | Connection string PostgreSQL | Secret GitHub `GISEBSPAY_CONNECTION_STRING` | Oui (Actions) → copié dans `app.env` sur le serveur |
 | **Stripe** (pk, sk, webhook) | **`/opt/apps/gisebs-pay-gateway/secrets.json`** | **Non** |
-| **Flutterwave** (ClientId, ClientSecret, WebhookSecret) | **Même fichier `secrets.json`** | **Non** |
 | **JWT** (optionnel) | Même fichier `secrets.json` | **Non** |
 | Mots de passe admin | Base PostgreSQL (seed initial) | Non |
 
@@ -26,7 +25,7 @@ Voir [GITHUB-SECRETS.md](./GITHUB-SECRETS.md) :
 1. `SSH_PRIVATE_KEY_UBUNTU1` (org) **ou** `GISEBSPAY_SSH_PRIVATE_KEY`
 2. `GISEBSPAY_CONNECTION_STRING` avec `Database=gisebs_pay_gateway`
 
-**Ne mettez pas les clés Stripe ni Flutterwave dans GitHub.**
+**Ne mettez pas les clés Stripe dans GitHub.**
 
 ---
 
@@ -68,23 +67,11 @@ Contenu (clés **Live** = prod par défaut ; clés **Test** = si la requête env
       "WebhookSecret": "whsec_..."
     }
   },
-  "Flutterwave": {
-    "ClientId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    "ClientSecret": "votre-client-secret",
-    "UseSandbox": true,
-    "WebhookSecret": "secret-hash-aleatoire-long-defini-dans-dashboard-flutterwave",
-    "BaseUrl": "https://api.flutterwave.cloud"
-  },
   "Jwt": {
     "SecretKey": "votre-cle-jwt-aleatoire-minimum-32-caracteres"
   }
 }
 ```
-
-| Environnement Flutterwave | `UseSandbox` | Clés | API |
-|---------------------------|--------------|------|-----|
-| Test / sandbox | `true` | developersandbox → Test API keys | `developersandbox-api.flutterwave.com` |
-| Production (live) | `false` | compte business Flutterwave → Live API keys | `BaseUrl` (ex. `https://api.flutterwave.cloud`) |
 
 Compatibilité : l’ancien format plat (`PublishableKey` / `SecretKey` au niveau `Stripe`) reste lu comme **Live**.
 
@@ -122,44 +109,6 @@ Redémarrez l’application :
 sudo systemctl restart gisebs-pay-gateway
 sudo systemctl status gisebs-pay-gateway
 ```
-
----
-
-## Étape 2b — Flutterwave (Mobile Money)
-
-Même modèle de sécurité que Stripe : **uniquement** dans `secrets.json` sur le serveur.
-
-### Compte marchand (Canada / hors Afrique)
-
-Flutterwave accepte les **entreprises enregistrées au Canada** (et US / UK / UE) pour collecter en Afrique (Mobile Money + cartes locales) puis reverser en **CAD/USD**.
-
-À l’inscription ([onboarding.flutterwave.com](https://onboarding.flutterwave.com)) :
-1. **Country** = Canada (pas Nigeria)
-2. Type = **Registered Business Account**
-3. Documents typiques : Certificate of Incorporation (fédéral ou provincial), pièces d’identité des dirigeants, compte bancaire d’entreprise CAD/USD pour les payouts
-4. Après validation : activer **Mobile Money** pour les devises ciblées (XOF, XAF, GHS, KES, etc.) — le MoMo n’est pas le produit NGN Nigeria
-
-### Clés & webhook
-
-1. Sandbox : [developersandbox.flutterwave.com](https://developersandbox.flutterwave.com) → **API keys**  
-   Live : dashboard business Flutterwave → **Settings → API Keys** (après activation du compte).
-2. Copiez **Client ID** + **Client Secret** dans `Flutterwave` du `secrets.json`.  
-   L’*Encryption Key* n’est **pas** utilisée par Pay Gateway v4 (OAuth) — ne la collez nulle part dans TutorSphere.
-3. Dashboard Flutterwave → **Webhooks** (onglet Test / Live) :
-   - URL : `https://gisebsapipaygateway.gisebs.com/api/webhooks/flutterwave`
-   - Secret / hash : générez une chaîne longue aléatoire → même valeur dans le dashboard **et** dans `Flutterwave:WebhookSecret`
-   - Événements : au minimum `charge.completed` (et statut failed si proposé)
-4. Dashboard Flutterwave → activer **Mobile Money** (Payment Methods) pour les devises concernées.
-5. `chmod 600` + `systemctl restart gisebs-pay-gateway`
-
-**Règles anti-fuite**
-
-- TutorSphere / apps clientes **n’ont jamais** les clés Flutterwave — seulement `X-App-Code` + `X-Api-Key` Pay Gateway.
-- Ne committez pas `secrets.json`, ne le mettez pas dans GitHub Actions, ne le collez pas dans un ticket/chat.
-- Si une clé a fuité (capture d’écran, log, repo) → **régénérez** Client Secret immédiatement dans Flutterwave.
-- Sandbox (`UseSandbox: true`) pour les tests ; passez à `false` + clés Live seulement quand le compte business est vérifié.
-
-Vérification rapide après redémarrage : dans Pay Gateway, un `POST /api/mobile-money/charge` avec l’API key TutorSphere doit initier une charge (sinon erreur « Flutterwave non configuré »).
 
 ---
 

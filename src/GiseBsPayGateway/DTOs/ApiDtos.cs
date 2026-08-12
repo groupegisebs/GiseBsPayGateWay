@@ -233,67 +233,7 @@ public record ConnectTransferResponse(
     string? FailureCode = null,
     string? FailureMessage = null);
 
-// ── Collecte Mobile Money (Flutterwave) ─────────────────────────────────────
-
-public record MobileMoneyNetworkDto(
-    string CountryCode,
-    string CountryName,
-    string Currency,
-    string Network,
-    string NetworkLabel,
-    string PhoneCountryCode);
-
-public record MobileMoneyCountryDto(
-    string CountryCode,
-    string CountryName,
-    string Currency,
-    string PhoneCountryCode,
-    IReadOnlyList<MobileMoneyNetworkOptionDto> Networks,
-    /// <summary>Tarif local fixe équivalent à 10 USD.</summary>
-    decimal AmountFor10Usd = 0);
-
-public record MobileMoneyNetworkOptionDto(string Network, string NetworkLabel);
-
-public record CreateMobileMoneyChargeRequest(
-    string CustomerCode,
-    string Email,
-    string? FullName,
-    string? ExternalUserId,
-    string ProductCode,
-    string PlanCode,
-    string CountryCode,
-    string Network,
-    string PhoneNumber,
-    decimal? Amount = null,
-    /// <summary>Devise du montant source (ex. USD). Défaut = devise du plan catalogue.</summary>
-    string? SourceCurrency = null,
-    /// <summary>Sandbox only — ex. scenario:auth_redirect pour tester le flux redirect.</summary>
-    string? ScenarioKey = null);
-
-public record MobileMoneyQuoteResponse(
-    decimal OriginalAmount,
-    string OriginalCurrency,
-    decimal Amount,
-    string Currency,
-    string CountryCode,
-    string CountryName);
-
-public record MobileMoneyChargeResponse(
-    string PaymentCode,
-    string Status,
-    string Provider,
-    string TxRef,
-    string? FlutterwaveTransactionId,
-    decimal Amount,
-    string Currency,
-    string CountryCode,
-    string Network,
-    string PhoneNumber,
-    string? Instruction,
-    string? RedirectUrl,
-    string? Message,
-    decimal? OriginalAmount = null,
-    string? OriginalCurrency = null);
+// ── Payout Mobile Money ──────────────────────────────────────────────────────
 
 /// <summary>Stub Mobile Money payout — Phase 4.</summary>
 public record MobileMoneyValidateRequest(
@@ -345,3 +285,45 @@ public record DisbursementRequestResponse(
 public record PayPalOAuthStartRequest(string ExternalReference, string? ReturnUrl = null);
 public record PayPalOAuthStartResponse(string AuthorizationUrl, string State);
 public record PayPalLinkedAccountResponse(string ExternalReference, string? MaskedEmail, string Status, string? PayerId);
+
+// ── Collecte Mobile Money (CamPay / stubs Orange & MTN) ───────────────────────
+
+public record MobileMoneyChargeRequest(
+    string CustomerCode,
+    string Email,
+    string? FullName,
+    string? ExternalUserId,
+    string ProductCode,
+    string PlanCode,
+    /// <summary>ORANGE | MTN</summary>
+    string Channel,
+    /// <summary>Numéro camerounais, ex. +237690000000</summary>
+    string PhoneNumber,
+    string? MetadataJson = null,
+    string? Description = null);
+
+public record MobileMoneyChargeResponse(
+    string PaymentCode,
+    string Status,
+    decimal Amount,
+    string Currency,
+    string Channel,
+    string PhoneMasked,
+    string? ProviderReference,
+    DateTime? ExpiresAtUtc,
+    string? Instruction,
+    string? UssdHint);
+
+public record MobileMoneyStatusResponse(
+    string PaymentCode,
+    string Status,
+    string? RawProviderStatus,
+    decimal Amount,
+    string Currency,
+    string? Channel,
+    string? PhoneMasked,
+    string? ProviderReference,
+    DateTime? PaidAt,
+    DateTime? ExpiresAtUtc,
+    string? FailureCode,
+    string? FailureReason);

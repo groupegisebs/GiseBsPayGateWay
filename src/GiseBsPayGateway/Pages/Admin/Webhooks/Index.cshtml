@@ -3,35 +3,14 @@
 @{
     ViewData["Title"] = "Webhooks";
     Layout = "_Layout";
-    var provider = Model.ProviderFilter ?? "";
 }
 
 <h1 class="mb-2">Événements webhook</h1>
 <p class="text-muted mb-3">
-    Stripe et Flutterwave arrivent sur des endpoints distincts
-    (<code>/api/webhooks/stripe</code> · <code>/api/webhooks/flutterwave</code>).
+    Événements Stripe reçus sur <code>/api/webhooks/stripe</code>.
 </p>
 
-<ul class="nav nav-pills mb-3 gap-1">
-    <li class="nav-item">
-        <a class="nav-link @(string.IsNullOrEmpty(provider) ? "active" : "")"
-           asp-page="./Index" asp-route-search="@Model.Search">Tous (@(Model.StripeCount + Model.FlutterwaveCount))</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link @(provider == "stripe" ? "active" : "")"
-           asp-page="./Index" asp-route-provider="stripe" asp-route-search="@Model.Search">Stripe (@Model.StripeCount)</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link @(provider == "flutterwave" ? "active" : "")"
-           asp-page="./Index" asp-route-provider="flutterwave" asp-route-search="@Model.Search">Flutterwave / Mobile Money (@Model.FlutterwaveCount)</a>
-    </li>
-</ul>
-
 <form method="get" class="row g-2 align-items-end mb-3">
-    @if (!string.IsNullOrEmpty(Model.ProviderFilter))
-    {
-        <input type="hidden" name="provider" value="@Model.ProviderFilter" />
-    }
     <div class="col-md-6">
         <label class="form-label">Recherche</label>
         <input type="search" name="search" value="@Model.Search" class="form-control"
@@ -39,7 +18,7 @@
     </div>
     <div class="col-md-auto">
         <button type="submit" class="btn btn-outline-secondary">Filtrer</button>
-        @if (!string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.ProviderFilter))
+        @if (!string.IsNullOrEmpty(Model.Search))
         {
             <a asp-page="./Index" class="btn btn-link">Effacer</a>
         }
@@ -94,11 +73,9 @@
     }
     @foreach (var item in Model.Events)
     {
-        var badge = item.Provider == "stripe" ? "text-bg-primary" : "text-bg-success";
-        var label = item.Provider == "stripe" ? "Stripe" : "Flutterwave";
         <tr>
             <td>@item.CreatedAt.ToString("g")</td>
-            <td><span class="badge @badge">@label</span></td>
+            <td><span class="badge text-bg-primary">Stripe</span></td>
             <td><small>@item.EventId</small></td>
             <td>@item.EventType</td>
             <td><small>@(item.Reference ?? "—")</small></td>

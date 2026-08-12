@@ -21,7 +21,7 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
     public DbSet<CollectedTaxRecord> CollectedTaxRecords => Set<CollectedTaxRecord>();
     public DbSet<CollectedTaxLine> CollectedTaxLines => Set<CollectedTaxLine>();
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
-    public DbSet<FlutterwaveWebhookEvent> FlutterwaveWebhookEvents => Set<FlutterwaveWebhookEvent>();
+    public DbSet<MobileMoneyWebhookEvent> MobileMoneyWebhookEvents => Set<MobileMoneyWebhookEvent>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<StripeSettings> StripeSettings => Set<StripeSettings>();
     public DbSet<ConnectedAccount> ConnectedAccounts => Set<ConnectedAccount>();
@@ -80,7 +80,10 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
         builder.Entity<PaymentTransaction>(e =>
         {
             e.HasIndex(x => x.PaymentCode).IsUnique();
-            e.HasIndex(x => x.FlutterwaveTxRef);
+            e.HasIndex(x => new { x.ClientApplicationId, x.IdempotencyKey })
+                .IsUnique()
+                .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            e.HasIndex(x => x.ProviderReference);
             e.Property(x => x.PaymentCode).HasMaxLength(50);
             e.Property(x => x.Provider).HasMaxLength(30);
             e.Property(x => x.Currency).HasMaxLength(3);
@@ -94,18 +97,32 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.Property(x => x.StripeFee).HasPrecision(18, 2);
             e.Property(x => x.NetAmount).HasPrecision(18, 2);
             e.Property(x => x.StripeBalanceTransactionId).HasMaxLength(100);
-            e.Property(x => x.FlutterwaveTxRef).HasMaxLength(100);
-            e.Property(x => x.FlutterwaveTransactionId).HasMaxLength(100);
-            e.Property(x => x.MobileMoneyNetwork).HasMaxLength(40);
-            e.Property(x => x.MobileMoneyPhone).HasMaxLength(30);
-            e.Property(x => x.MobileMoneyCountry).HasMaxLength(2);
             e.Property(x => x.BillingCountry).HasMaxLength(2);
             e.Property(x => x.BillingState).HasMaxLength(50);
+            e.Property(x => x.MobileMoneyChannel).HasMaxLength(20);
+            e.Property(x => x.PhoneMasked).HasMaxLength(40);
+            e.Property(x => x.ProviderReference).HasMaxLength(100);
+            e.Property(x => x.IdempotencyKey).HasMaxLength(100);
+            e.Property(x => x.FailureCode).HasMaxLength(50);
+            e.Property(x => x.RawProviderStatus).HasMaxLength(50);
             e.HasOne(x => x.ClientApplication).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.ClientApplicationId);
             e.HasOne(x => x.Customer).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.CustomerId);
             e.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId);
             e.HasOne(x => x.PricingPlan).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.PricingPlanId);
             e.HasOne(x => x.Subscription).WithMany(x => x.PaymentTransactions).HasForeignKey(x => x.SubscriptionId);
+        });
+
+        builder.Entity<MobileMoneyWebhookEvent>(e =>
+        {
+            e.HasIndex(x => x.PayloadHash).IsUnique();
+            e.HasIndex(x => new { x.Provider, x.ProviderEventId })
+                .IsUnique()
+                .HasFilter("\"ProviderEventId\" IS NOT NULL");
+            e.Property(x => x.Provider).HasMaxLength(30);
+            e.Property(x => x.ProviderEventId).HasMaxLength(100);
+            e.Property(x => x.EventType).HasMaxLength(100);
+            e.Property(x => x.PayloadHash).HasMaxLength(64);
+            e.Property(x => x.ProcessingResult).HasMaxLength(100);
         });
 
         builder.Entity<CollectedTaxRecord>(e =>
@@ -199,16 +216,6 @@ public class ApplicationDbContext : IdentityDbContext<AdminUser>
             e.HasIndex(x => x.StripeEventId).IsUnique();
             e.Property(x => x.StripeEventId).HasMaxLength(100);
             e.Property(x => x.EventType).HasMaxLength(100);
-        });
-
-        builder.Entity<FlutterwaveWebhookEvent>(e =>
-        {
-            e.HasIndex(x => x.FlutterwaveEventId).IsUnique();
-            e.HasIndex(x => x.Reference);
-            e.Property(x => x.FlutterwaveEventId).HasMaxLength(200);
-            e.Property(x => x.EventType).HasMaxLength(100);
-            e.Property(x => x.Reference).HasMaxLength(200);
-            e.Property(x => x.ChargeId).HasMaxLength(200);
         });
 
         builder.Entity<AuditLog>(e =>

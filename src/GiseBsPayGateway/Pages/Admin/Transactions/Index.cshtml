@@ -31,12 +31,6 @@
             Stripe (@Model.StripeCount)
         </a>
     </li>
-    <li class="nav-item">
-        <a class="nav-link @(provider == "flutterwave" ? "active" : "")"
-           asp-page="./Index" asp-route-provider="flutterwave" asp-route-status="@Model.StatusFilter" asp-route-search="@Model.Search">
-            Mobile Money / Flutterwave (@Model.FlutterwaveCount)
-        </a>
-    </li>
 </ul>
 
 <form method="get" class="row g-2 align-items-end mb-3">
@@ -46,7 +40,7 @@
     }
     <div class="col-md-4">
         <label class="form-label">Recherche</label>
-        <input type="search" name="search" value="@Model.Search" class="form-control" placeholder="Code, app, client, Stripe, Flutterwave…" />
+        <input type="search" name="search" value="@Model.Search" class="form-control" placeholder="Code, app, client, Stripe…" />
     </div>
     <div class="col-md-3">
         <label class="form-label">Statut</label>
@@ -132,11 +126,9 @@
             : item.Status == "Succeeded" ? "text-bg-success"
             : item.Status == "Failed" ? "text-bg-danger"
             : "text-bg-secondary";
-        var providerBadge = item.Provider == "flutterwave" ? "text-bg-success" : "text-bg-primary";
-        var providerLabel = item.Provider == "flutterwave" ? "Flutterwave" : "Stripe";
-        var providerRef = item.Provider == "flutterwave"
-            ? (item.FlutterwaveTransactionId ?? item.FlutterwaveTxRef ?? "—")
-            : (item.StripePaymentIntentId ?? item.StripeCheckoutSessionId ?? "—");
+        var providerBadge = "text-bg-primary";
+        var providerLabel = "Stripe";
+        var providerRef = item.StripePaymentIntentId ?? item.StripeCheckoutSessionId ?? "—";
         <tr>
             <td>@item.CreatedAt.ToString("g")</td>
             <td>
@@ -144,10 +136,6 @@
             </td>
             <td>
                 <span class="badge @providerBadge">@providerLabel</span>
-                @if (item.Provider == "flutterwave" && !string.IsNullOrWhiteSpace(item.MobileMoneyCountry))
-                {
-                    <div><small class="text-muted">@item.MobileMoneyCountry @(item.MobileMoneyNetwork)</small></div>
-                }
             </td>
             <td>@(string.IsNullOrWhiteSpace(item.InvoiceNumber) ? "—" : Html.Raw($"<code>{item.InvoiceNumber}</code>"))</td>
             <td>@item.AppName</td>
