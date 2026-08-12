@@ -5,6 +5,7 @@ using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
 using GiseBsPayGateway.Enums;
 using GiseBsPayGateway.Options;
+using GiseBsPayGateway.Services.Tax;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -35,6 +36,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
     private readonly IEnumerable<IMobileMoneyGateway> _gateways;
     private readonly LocalSimulatedMobileMoneyGateway _localSim;
     private readonly MobileMoneyOptions _options;
+    private readonly IAfricanTaxService _africanTax;
     private readonly IAuditService _auditService;
     private readonly ILogger<MobileMoneyOrchestrator> _logger;
 
@@ -43,6 +45,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         IEnumerable<IMobileMoneyGateway> gateways,
         LocalSimulatedMobileMoneyGateway localSim,
         IOptions<MobileMoneyOptions> options,
+        IAfricanTaxService africanTax,
         IAuditService auditService,
         ILogger<MobileMoneyOrchestrator> logger)
     {
@@ -50,6 +53,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         _gateways = gateways;
         _localSim = localSim;
         _options = options.Value;
+        _africanTax = africanTax;
         _auditService = auditService;
         _logger = logger;
     }
@@ -69,6 +73,10 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
 
         if (!MobileMoneyPhoneValidator.TryNormalizeCameroonPhone(request.PhoneNumber, out var phone, out var masked))
             throw new InvalidOperationException("Numéro camerounais invalide. Format attendu : +2376XXXXXXXX.");
+
+        var billingCountry = string.IsNullOrWhiteSpace(request.BillingCountryCode)
+            ? (_options.Country ?? "CM")
+            : request.BillingCountryCode.Trim().ToUpperInvariant();
 
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
@@ -98,6 +106,9 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
                 x.Currency.Equals("xaf", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
                 "Le plan de paiement Mobile Money doit exister en devise XAF (pas de conversion automatique).");
+
+        // Montant catalogue = HT ; montant encaissé = toujours TTC (taxe pays du payeur).
+        var tax = _africanTax.Calculate(plan.Amount, "XAF", billingCountry);
 
         var customer = await _db.Customers
             .FirstOrDefaultAsync(
@@ -139,11 +150,15 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             PricingPlanId = plan.Id,
             PaymentCode = paymentCode,
             Status = PaymentStatus.Pending,
-            Amount = plan.Amount,
+            Amount = tax.AmountInclusive,
+            AmountSubtotal = tax.AmountExclusive,
+            TaxAmount = tax.TaxAmount,
+            GrossAmount = tax.AmountInclusive,
             Currency = plan.Currency,
             Provider = gateway.ProviderCode,
             MobileMoneyChannel = channel,
             PhoneMasked = masked,
+            BillingCountry = tax.CountryCode,
             IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey.Trim(),
             ExpiresAtUtc = expires,
             Product = product,
@@ -158,7 +173,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             paymentCode,
             channel,
             phone,
-            plan.Amount,
+            tax.AmountInclusive,
             "XAF",
             request.Description ?? $"Paiement {paymentCode}",
             payment.IdempotencyKey), cancellationToken);
@@ -198,7 +213,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             nameof(PaymentTransaction),
             payment.Id.ToString(),
             true,
-            $"PaymentCode={paymentCode};Channel={channel};Provider={gateway.ProviderCode};Status={payment.Status}",
+            $"PaymentCode={paymentCode};Channel={channel};Provider={gateway.ProviderCode};Status={payment.Status};Country={tax.CountryCode};HT={tax.AmountExclusive};Tax={tax.TaxAmount};TTC={tax.AmountInclusive}",
             app.AppCode);
 
         return MapCharge(payment, init.Instruction, init.UssdHint);
@@ -429,8 +444,13 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
     private static MobileMoneyChargeResponse MapCharge(
         PaymentTransaction payment,
         string? instruction = null,
-        string? ussd = null) =>
-        new(
+        string? ussd = null)
+    {
+        var exclusive = payment.AmountSubtotal ?? payment.Amount;
+        var taxAmount = payment.TaxAmount ?? 0m;
+        var (rate, taxName) = ResolveCatalogTax(payment.BillingCountry);
+
+        return new(
             payment.PaymentCode,
             payment.Status.ToString(),
             payment.Amount,
@@ -442,10 +462,21 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             instruction ?? (payment.Status == PaymentStatus.PendingCustomerConfirmation
                 ? "Consultez votre téléphone et confirmez la demande de paiement. Ne communiquez jamais votre code secret Mobile Money."
                 : null),
-            ussd);
+            ussd,
+            exclusive,
+            taxAmount,
+            rate,
+            taxName,
+            payment.BillingCountry);
+    }
 
-    private static MobileMoneyStatusResponse MapStatus(PaymentTransaction payment) =>
-        new(
+    private static MobileMoneyStatusResponse MapStatus(PaymentTransaction payment)
+    {
+        var exclusive = payment.AmountSubtotal;
+        var taxAmount = payment.TaxAmount;
+        var (rate, taxName) = ResolveCatalogTax(payment.BillingCountry);
+
+        return new(
             payment.PaymentCode,
             payment.Status.ToString(),
             payment.RawProviderStatus,
@@ -457,7 +488,22 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
             payment.PaidAt,
             payment.ExpiresAtUtc,
             payment.FailureCode,
-            payment.FailureReason);
+            payment.FailureReason,
+            exclusive,
+            taxAmount,
+            rate > 0 ? rate : null,
+            taxName,
+            payment.BillingCountry);
+    }
+
+    /// <summary>Taux catalogue (pas le taux effectif après arrondi monétaire).</summary>
+    private static (decimal RatePercent, string? TaxName) ResolveCatalogTax(string? billingCountry)
+    {
+        if (!string.IsNullOrWhiteSpace(billingCountry) &&
+            AfricanTaxRates.TryGet(billingCountry, out var rateInfo))
+            return (rateInfo.RatePercent, rateInfo.TaxName);
+        return (0m, null);
+    }
 
     private static string RedactPayload(string payload)
     {

@@ -8,6 +8,7 @@ using GiseBsPayGateway.Middleware;
 using GiseBsPayGateway.Options;
 using GiseBsPayGateway.Services;
 using GiseBsPayGateway.Services.MobileMoney;
+using GiseBsPayGateway.Services.Tax;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -169,6 +170,7 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ITaxService, TaxService>();
 builder.Services.AddScoped<ICollectedTaxService, CollectedTaxService>();
+builder.Services.AddSingleton<IAfricanTaxService, AfricanTaxService>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddControllers();

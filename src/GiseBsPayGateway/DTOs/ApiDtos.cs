@@ -299,12 +299,15 @@ public record MobileMoneyChargeRequest(
     string Channel,
     /// <summary>Numéro camerounais, ex. +237690000000</summary>
     string PhoneNumber,
+    /// <summary>Code ISO pays du payeur (ex. CM). Défaut : CM.</summary>
+    string? BillingCountryCode = null,
     string? MetadataJson = null,
     string? Description = null);
 
 public record MobileMoneyChargeResponse(
     string PaymentCode,
     string Status,
+    /// <summary>Montant TTC encaissé (toujours taxé).</summary>
     decimal Amount,
     string Currency,
     string Channel,
@@ -312,7 +315,12 @@ public record MobileMoneyChargeResponse(
     string? ProviderReference,
     DateTime? ExpiresAtUtc,
     string? Instruction,
-    string? UssdHint);
+    string? UssdHint,
+    decimal AmountExclusive = 0,
+    decimal TaxAmount = 0,
+    decimal TaxRatePercent = 0,
+    string? TaxName = null,
+    string? BillingCountryCode = null);
 
 public record MobileMoneyStatusResponse(
     string PaymentCode,
@@ -326,4 +334,24 @@ public record MobileMoneyStatusResponse(
     DateTime? PaidAt,
     DateTime? ExpiresAtUtc,
     string? FailureCode,
-    string? FailureReason);
+    string? FailureReason,
+    decimal? AmountExclusive = null,
+    decimal? TaxAmount = null,
+    decimal? TaxRatePercent = null,
+    string? TaxName = null,
+    string? BillingCountryCode = null);
+
+public record AfricanTaxQuoteRequest(
+    decimal AmountExclusive,
+    string Currency,
+    string CountryCode);
+
+public record AfricanTaxQuoteResponse(
+    string CountryCode,
+    string CountryName,
+    string TaxName,
+    decimal TaxRatePercent,
+    decimal AmountExclusive,
+    decimal TaxAmount,
+    decimal AmountInclusive,
+    string Currency);

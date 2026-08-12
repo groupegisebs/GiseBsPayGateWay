@@ -1,6 +1,7 @@
 using GiseBsPayGateway.Controllers.Api;
 using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Services;
+using GiseBsPayGateway.Services.Tax;
 using GiseBsPayGateway.Tests.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -28,7 +29,7 @@ public class TaxControllerTests
         taxService.Setup(s => s.CalculateAsync(It.IsAny<TaxCalculationRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
 
-        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>());
+        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>(), new AfricanTaxService());
         ControllerTestHelper.SetClientApplicationContext(controller, app, apiKey);
 
         var request = new TaxCalculationRequest(
@@ -54,7 +55,7 @@ public class TaxControllerTests
         taxService.Setup(s => s.CalculateAsync(It.IsAny<TaxCalculationRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TaxCalculationException("Adresse de facturation incomplète."));
 
-        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>());
+        var controller = new TaxController(taxService.Object, Mock.Of<ICollectedTaxService>(), new AfricanTaxService());
         ControllerTestHelper.SetClientApplicationContext(controller, app, apiKey);
 
         var request = new TaxCalculationRequest(
@@ -65,5 +66,27 @@ public class TaxControllerTests
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
         var error = Assert.IsType<ApiErrorResponse>(badRequest.Value);
         Assert.Equal("Adresse de facturation incomplète.", error.Error);
+    }
+
+    [Fact]
+    public void AfricaRates_ListeComplete()
+    {
+        var controller = new TaxController(Mock.Of<ITaxService>(), Mock.Of<ICollectedTaxService>(), new AfricanTaxService());
+        var result = controller.ListAfricaRates();
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var rates = Assert.IsAssignableFrom<IReadOnlyList<AfricanTaxRateDto>>(ok.Value);
+        Assert.True(rates.Count >= 50);
+        Assert.Contains(rates, r => r.CountryCode == "CM" && r.RatePercent == 19.25m);
+    }
+
+    [Fact]
+    public void AfricaQuote_Cameroon_Ttc()
+    {
+        var controller = new TaxController(Mock.Of<ITaxService>(), Mock.Of<ICollectedTaxService>(), new AfricanTaxService());
+        var result = controller.QuoteAfrica(new AfricanTaxQuoteRequest(5000m, "XAF", "CM"));
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var quote = Assert.IsType<AfricanTaxQuoteResponse>(ok.Value);
+        Assert.Equal(5963m, quote.AmountInclusive);
+        Assert.Equal(963m, quote.TaxAmount);
     }
 }
