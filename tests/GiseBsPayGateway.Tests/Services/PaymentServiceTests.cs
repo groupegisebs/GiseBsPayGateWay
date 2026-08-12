@@ -28,7 +28,7 @@ public class PaymentServiceTests
         stripe.Verify(s => s.CreateCheckoutSessionAsync(
             It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-            It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()),
+            It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -61,7 +61,7 @@ public class PaymentServiceTests
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);
@@ -92,7 +92,7 @@ public class PaymentServiceTests
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), true,
-                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", null, "cs_secret_1"));
 
         var settings = new Mock<IStripeSettingsProvider>();
@@ -135,7 +135,7 @@ public class PaymentServiceTests
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-                billingAddress, customerUpdate, It.IsAny<CancellationToken>()))
+                billingAddress, customerUpdate, It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);
@@ -154,7 +154,7 @@ public class PaymentServiceTests
         stripe.Verify(s => s.CreateCheckoutSessionAsync(
             It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-            billingAddress, customerUpdate, It.IsAny<CancellationToken>()), Times.Once);
+            billingAddress, customerUpdate, It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public class PaymentServiceTests
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-                expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+                expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);
@@ -190,7 +190,7 @@ public class PaymentServiceTests
         stripe.Verify(s => s.CreateCheckoutSessionAsync(
             It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-            expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()), Times.Once);
+            expectedAddress, It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public class PaymentServiceTests
         stripe.Setup(s => s.CreateCheckoutSessionAsync(
                 It.IsAny<PaymentTransaction>(), It.IsAny<Customer>(), It.IsAny<PricingPlan>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(("cs_test_1", "https://checkout.stripe.com/x", null));
 
         var sut = CreatePaymentService(db, stripe);

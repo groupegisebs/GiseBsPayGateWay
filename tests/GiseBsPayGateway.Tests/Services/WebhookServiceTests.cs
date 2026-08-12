@@ -171,6 +171,9 @@ public class WebhookServiceTests
             stripe,
             Mock.Of<ICollectedTaxService>(),
             Mock.Of<IStripeSettingsProvider>(),
+            Mock.Of<IConnectService>(),
+            Mock.Of<ITransferService>(),
+            Mock.Of<IPayoutCallbackNotifier>(),
             Mock.Of<ILogger<WebhookService>>());
     }
 

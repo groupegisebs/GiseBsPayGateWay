@@ -49,7 +49,7 @@ public sealed class MobileMoneyOrchestrator : IMobileMoneyOrchestrator
         _db = db;
         _gateways = gateways;
         _localSim = localSim;
-        _options = options;
+        _options = options.Value;
         _auditService = auditService;
         _logger = logger;
     }

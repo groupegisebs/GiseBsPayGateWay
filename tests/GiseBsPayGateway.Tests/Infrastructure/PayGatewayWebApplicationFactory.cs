@@ -38,7 +38,7 @@ public class PayGatewayWebApplicationFactory : WebApplicationFactory<Program>
             stripe.Setup(s => s.CreateCheckoutSessionAsync(
                     It.IsAny<Entities.PaymentTransaction>(), It.IsAny<Entities.Customer>(), It.IsAny<Entities.PricingPlan>(),
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<bool>(),
-                    It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<BillingAddressDto?>(), It.IsAny<CustomerUpdateDto?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(("cs_test_integration", "https://checkout.stripe.com/test", "cs_secret_integration"));
             stripe.Setup(s => s.GetOrCreateStripeCustomerAsync(It.IsAny<Entities.Customer>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string?)null);
