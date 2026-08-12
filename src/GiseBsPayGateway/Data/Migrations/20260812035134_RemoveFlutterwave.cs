@@ -11,32 +11,17 @@ namespace GiseBsPayGateway.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "FlutterwaveWebhookEvents");
-
-            migrationBuilder.DropIndex(
-                name: "IX_PaymentTransactions_FlutterwaveTxRef",
-                table: "PaymentTransactions");
-
-            migrationBuilder.DropColumn(
-                name: "FlutterwaveTransactionId",
-                table: "PaymentTransactions");
-
-            migrationBuilder.DropColumn(
-                name: "FlutterwaveTxRef",
-                table: "PaymentTransactions");
-
-            migrationBuilder.DropColumn(
-                name: "MobileMoneyCountry",
-                table: "PaymentTransactions");
-
-            migrationBuilder.DropColumn(
-                name: "MobileMoneyNetwork",
-                table: "PaymentTransactions");
-
-            migrationBuilder.DropColumn(
-                name: "MobileMoneyPhone",
-                table: "PaymentTransactions");
+            // Idempotent : certaines bases n'ont jamais reçu AddFlutterwave* (ou schema diverge de __EFMigrationsHistory).
+            migrationBuilder.Sql(
+                """
+                DROP TABLE IF EXISTS "FlutterwaveWebhookEvents";
+                DROP INDEX IF EXISTS "IX_PaymentTransactions_FlutterwaveTxRef";
+                ALTER TABLE "PaymentTransactions" DROP COLUMN IF EXISTS "FlutterwaveTransactionId";
+                ALTER TABLE "PaymentTransactions" DROP COLUMN IF EXISTS "FlutterwaveTxRef";
+                ALTER TABLE "PaymentTransactions" DROP COLUMN IF EXISTS "MobileMoneyCountry";
+                ALTER TABLE "PaymentTransactions" DROP COLUMN IF EXISTS "MobileMoneyNetwork";
+                ALTER TABLE "PaymentTransactions" DROP COLUMN IF EXISTS "MobileMoneyPhone";
+                """);
         }
 
         /// <inheritdoc />
