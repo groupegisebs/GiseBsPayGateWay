@@ -372,6 +372,7 @@ public class WebhookService : IWebhookService
 
         await _invoiceService.EnrichSuccessfulPaymentFinancialsAsync(payment, session, null, cancellationToken);
         await EnsureGisebsInvoiceAsync(payment, session, cancellationToken);
+        await NotifyClientPaymentAsync(payment, "payment.succeeded", cancellationToken);
     }
 
     private async Task EnsureGisebsInvoiceAsync(
@@ -447,6 +448,8 @@ public class WebhookService : IWebhookService
         {
             await _invoiceService.EnsureInvoiceForPaymentAsync(payment, cancellationToken);
         }
+
+        await NotifyClientPaymentAsync(payment, "payment.succeeded", cancellationToken);
     }
 
     private async Task HandlePaymentFailureAsync(
@@ -463,6 +466,8 @@ public class WebhookService : IWebhookService
             payment.PaymentCode,
             transactionReference,
             cancellationToken);
+
+        await NotifyClientPaymentAsync(payment, "payment.failed", cancellationToken);
     }
 
     private async Task HandleInvoicePaidAsync(Event stripeEvent, CancellationToken cancellationToken)
@@ -1045,6 +1050,31 @@ public class WebhookService : IWebhookService
                 status,
                 amountMinor = entity.AmountMinor,
                 currency = entity.Currency
+            },
+            cancellationToken);
+    }
+
+    private async Task NotifyClientPaymentAsync(
+        Entities.PaymentTransaction payment,
+        string eventType,
+        CancellationToken cancellationToken)
+    {
+        var app = payment.ClientApplication
+            ?? await _db.ClientApplications
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == payment.ClientApplicationId, cancellationToken);
+        if (app is null)
+            return;
+
+        await _payoutCallbackNotifier.NotifyAsync(
+            app,
+            eventType,
+            new
+            {
+                paymentCode = payment.PaymentCode,
+                status = payment.Status.ToString(),
+                paidAt = payment.PaidAt,
+                failureReason = payment.FailureReason
             },
             cancellationToken);
     }
