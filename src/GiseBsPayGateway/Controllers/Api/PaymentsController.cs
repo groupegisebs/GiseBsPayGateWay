@@ -23,4 +23,19 @@ public class PaymentsController : ControllerBase
         var payment = await _paymentService.GetPaymentByCodeAsync(app, paymentCode, cancellationToken);
         return payment is null ? NotFound(new ApiErrorResponse("Paiement introuvable.", null)) : Ok(payment);
     }
+
+    [HttpPost("{paymentCode}/refund")]
+    public async Task<ActionResult<PaymentResponse>> Refund(string paymentCode, CancellationToken cancellationToken)
+    {
+        var app = HttpContext.GetClientApplicationContext().Application;
+        try
+        {
+            var payment = await _paymentService.RefundPaymentByCodeAsync(app, paymentCode, cancellationToken);
+            return Ok(payment);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiErrorResponse(ex.Message, null));
+        }
+    }
 }

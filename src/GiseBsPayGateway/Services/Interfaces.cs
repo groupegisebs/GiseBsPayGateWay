@@ -29,6 +29,8 @@ public interface IStripeService
         IReadOnlyList<string>? paymentMethodTypes = null,
         CancellationToken cancellationToken = default);
     Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default);
+    /// <summary>Rembourse le PaymentIntent Stripe (idempotent via <paramref name="idempotencyKey"/>).</summary>
+    Task RefundPaymentIntentAsync(string stripePaymentIntentId, string? idempotencyKey = null, CancellationToken cancellationToken = default);
     Task SetCancelAtPeriodEndAsync(string stripeSubscriptionId, bool cancelAtPeriodEnd, CancellationToken cancellationToken = default);
     /// <summary>
     /// Crée un nouvel abonnement Stripe (un canceled ne peut pas être redémarré) et retourne le nouvel id.
@@ -48,6 +50,7 @@ public interface IPaymentService
 {
     Task<DTOs.CheckoutSessionResponse> CreateCheckoutSessionAsync(Entities.ClientApplication app, DTOs.CreateCheckoutSessionRequest request, CancellationToken cancellationToken = default);
     Task<DTOs.PaymentResponse?> GetPaymentByCodeAsync(Entities.ClientApplication app, string paymentCode, CancellationToken cancellationToken = default);
+    Task<DTOs.PaymentResponse> RefundPaymentByCodeAsync(Entities.ClientApplication app, string paymentCode, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DTOs.SubscriptionResponse>> GetCustomerSubscriptionsAsync(Entities.ClientApplication app, string customerCode, CancellationToken cancellationToken = default);
     Task<DTOs.CancelSubscriptionResponse> CancelSubscriptionAsync(Entities.ClientApplication app, DTOs.CancelSubscriptionRequest request, CancellationToken cancellationToken = default);
 }

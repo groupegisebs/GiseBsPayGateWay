@@ -501,6 +501,24 @@ public class StripeService : IStripeService
             "Utilisez un plan dans la même devise, ou un autre customer Stripe.";
     }
 
+    public async Task RefundPaymentIntentAsync(
+        string stripePaymentIntentId,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default)
+    {
+        await ConfigureStripeAsync(cancellationToken);
+        var options = new RefundCreateOptions
+        {
+            PaymentIntent = stripePaymentIntentId,
+            Reason = "requested_by_customer"
+        };
+        RequestOptions? requestOptions = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? null
+            : new RequestOptions { IdempotencyKey = idempotencyKey };
+        var service = new RefundService();
+        await service.CreateAsync(options, requestOptions, cancellationToken);
+    }
+
     public async Task CancelSubscriptionAsync(string stripeSubscriptionId, bool cancelImmediately, CancellationToken cancellationToken = default)
     {
         await ConfigureStripeAsync(cancellationToken);

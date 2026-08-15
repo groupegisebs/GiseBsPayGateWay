@@ -167,6 +167,78 @@ public class PaymentService : IPaymentService
         return MapPayment(payment, invoice, collectedTax);
     }
 
+    public async Task<PaymentResponse> RefundPaymentByCodeAsync(
+        ClientApplication app,
+        string paymentCode,
+        CancellationToken cancellationToken = default)
+    {
+        var payment = await _db.PaymentTransactions
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .Include(x => x.PricingPlan)
+            .FirstOrDefaultAsync(x => x.ClientApplicationId == app.Id && x.PaymentCode == paymentCode, cancellationToken)
+            ?? throw new InvalidOperationException("Paiement introuvable.");
+
+        if (payment.Status is PaymentStatus.Refunded or PaymentStatus.PartiallyRefunded)
+        {
+            var existingInvoice = await _invoiceService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
+            var existingTax = await _collectedTaxService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
+            return MapPayment(payment, existingInvoice, existingTax);
+        }
+
+        if (payment.Status is not PaymentStatus.Succeeded and not PaymentStatus.RefundPending)
+            throw new InvalidOperationException($"Impossible de rembourser un paiement au statut {payment.Status}.");
+
+        if (!string.Equals(payment.Provider, "stripe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Remboursement automatique indisponible pour ce canal (Mobile Money). Traitez-le manuellement puis réessayez.");
+
+        if (string.IsNullOrWhiteSpace(payment.StripePaymentIntentId))
+            throw new InvalidOperationException("PaymentIntent Stripe manquant — remboursement impossible.");
+
+        try
+        {
+            await _stripeService.RefundPaymentIntentAsync(
+                payment.StripePaymentIntentId,
+                $"{payment.PaymentCode}:refund",
+                cancellationToken);
+        }
+        catch (Stripe.StripeException ex) when (
+            string.Equals(ex.StripeError?.Code, "charge_already_refunded", StringComparison.OrdinalIgnoreCase)
+            || (ex.Message?.Contains("already been refunded", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            await _auditService.LogAsync(
+                "PaymentAlreadyRefunded",
+                nameof(PaymentTransaction),
+                payment.Id.ToString(),
+                true,
+                $"PaymentCode={payment.PaymentCode}",
+                app.AppCode);
+        }
+        catch (Stripe.StripeException ex)
+        {
+            throw new InvalidOperationException(
+                $"Remboursement Stripe refusé : {ex.StripeError?.Message ?? ex.Message}",
+                ex);
+        }
+
+        payment.Status = PaymentStatus.Refunded;
+        payment.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync(
+            "PaymentRefunded",
+            nameof(PaymentTransaction),
+            payment.Id.ToString(),
+            true,
+            $"PaymentCode={payment.PaymentCode}",
+            app.AppCode);
+
+        var invoice = await _invoiceService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
+        var collectedTax = await _collectedTaxService.GetByPaymentCodeAsync(app.Id, paymentCode, cancellationToken);
+        return MapPayment(payment, invoice, collectedTax);
+    }
+
     public async Task<IReadOnlyList<SubscriptionResponse>> GetCustomerSubscriptionsAsync(ClientApplication app, string customerCode, CancellationToken cancellationToken = default)
     {
         var subscriptions = await _db.Subscriptions.AsNoTracking()
@@ -191,24 +263,34 @@ public class PaymentService : IPaymentService
             throw new InvalidOperationException("Abonnement Stripe non lié.");
         }
 
-        // Toujours fin de période : l'accès reste jusqu'à CurrentPeriodEnd.
         await _stripeService.CancelSubscriptionAsync(
             subscription.StripeSubscriptionId,
-            cancelImmediately: false,
+            request.CancelImmediately,
             cancellationToken);
 
-        subscription.CancelAtPeriodEnd = true;
         subscription.CancelledAt = DateTime.UtcNow;
-        if (subscription.Status is SubscriptionStatus.Cancelled)
+        if (request.CancelImmediately)
         {
-            subscription.Status = SubscriptionStatus.Active;
+            subscription.Status = SubscriptionStatus.Cancelled;
+            subscription.CancelAtPeriodEnd = false;
+        }
+        else
+        {
+            subscription.CancelAtPeriodEnd = true;
+            if (subscription.Status is SubscriptionStatus.Cancelled)
+                subscription.Status = SubscriptionStatus.Active;
         }
 
         subscription.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
 
-        await _auditService.LogAsync("SubscriptionCancelled", nameof(Subscription), subscription.Id.ToString(), true,
-            $"Code={subscription.SubscriptionCode}; EndsAt={subscription.CurrentPeriodEnd:o}", app.AppCode);
+        await _auditService.LogAsync(
+            "SubscriptionCancelled",
+            nameof(Subscription),
+            subscription.Id.ToString(),
+            true,
+            $"Code={subscription.SubscriptionCode}; Immediate={request.CancelImmediately}; EndsAt={subscription.CurrentPeriodEnd:o}",
+            app.AppCode);
 
         return new CancelSubscriptionResponse(
             subscription.SubscriptionCode,
