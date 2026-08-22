@@ -32,6 +32,7 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
     private readonly IConfiguration _configuration;
     private readonly ILogger<MtnMomoDirectGateway> _logger;
     private readonly ConcurrentDictionary<string, (string Token, DateTime ExpiresUtc)> _tokenCache = new();
+    private string? _workingSubscriptionKey;
 
     public MtnMomoDirectGateway(
         IHttpClientFactory httpClientFactory,
@@ -58,7 +59,14 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
 
         EnsureSecrets();
 
-        var referenceId = Guid.NewGuid().ToString();
+        if (!request.Currency.Equals("XAF", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PaymentInitiationResult(
+                false, null, PaymentStatus.Failed, null, null, null,
+                "INVALID_CURRENCY", "MTN Collections Cameroun n'accepte que la devise ISO XAF.");
+        }
+
+        var referenceId = MtnMoMoOpenApi.ToReferenceId(request.IdempotencyKey, request.InternalReference);
         var client = CreateClient();
         var token = await GetTokenAsync(client, cancellationToken);
         var target = ResolveTargetEnvironment();
@@ -66,43 +74,44 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "collection/v1_0/requesttopay");
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        httpRequest.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", _secrets.SubscriptionKey);
+        httpRequest.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", ActiveSubscriptionKey());
         httpRequest.Headers.TryAddWithoutValidation("X-Reference-Id", referenceId);
         httpRequest.Headers.TryAddWithoutValidation("X-Target-Environment", target);
         var callback = ResolveCallbackUrl();
         if (!string.IsNullOrWhiteSpace(callback))
             httpRequest.Headers.TryAddWithoutValidation("X-Callback-Url", callback);
 
+        var note = MtnMoMoOpenApi.SanitizeNote(request.Description);
         httpRequest.Content = JsonContent.Create(new
         {
             amount = ((int)decimal.Round(request.Amount, 0, MidpointRounding.AwayFromZero)).ToString(),
-            currency = request.Currency.ToUpperInvariant(),
+            currency = "XAF",
             externalId = request.InternalReference,
             payer = new { partyIdType = "MSISDN", partyId = msisdn },
-            payerMessage = Truncate(request.Description, 160),
-            payeeNote = Truncate(request.Description, 160)
+            payerMessage = note,
+            payeeNote = note
         }, options: JsonOpts);
 
         using var response = await client.SendAsync(httpRequest, cancellationToken);
-        if (response.StatusCode is not System.Net.HttpStatusCode.Accepted
-            and not System.Net.HttpStatusCode.OK)
+        if (response.StatusCode is System.Net.HttpStatusCode.Accepted
+            or System.Net.HttpStatusCode.Created
+            or System.Net.HttpStatusCode.OK)
         {
-            var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("MTN requesttopay HTTP {Status}: {Body}", (int)response.StatusCode, Truncate(errBody, 300));
-            return new PaymentInitiationResult(
-                false, null, PaymentStatus.Failed, null, null, null,
-                "PROVIDER_ERROR", "Échec d'initiation MTN MoMo.");
+            return PendingResult(referenceId);
         }
 
+        var errBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        var error = MtnMoMoOpenApi.FromHttp(response.StatusCode, errBody);
+        if (error.IsDuplicate)
+        {
+            _logger.LogInformation("MTN requesttopay déjà accepté pour {ReferenceId} — lecture du statut.", referenceId);
+            return await StatusAsInitiationAsync(referenceId, cancellationToken);
+        }
+
+        _logger.LogWarning("MTN requesttopay HTTP {Status} {Code}: {Body}",
+            (int)response.StatusCode, error.Code, Truncate(errBody, 300));
         return new PaymentInitiationResult(
-            true,
-            referenceId,
-            PaymentStatus.PendingCustomerConfirmation,
-            "PENDING",
-            "Consultez votre téléphone MTN et confirmez la demande de paiement. Ne communiquez jamais votre code secret.",
-            "*126#",
-            null,
-            null);
+            false, null, error.Status, error.Code, null, null, error.Code, error.UserMessage);
     }
 
     public async Task<PaymentStatusResult> GetStatusAsync(
@@ -121,23 +130,40 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
             HttpMethod.Get,
             $"collection/v1_0/requesttopay/{Uri.EscapeDataString(providerReference)}");
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        httpRequest.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", _secrets.SubscriptionKey);
+        httpRequest.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", ActiveSubscriptionKey());
         httpRequest.Headers.TryAddWithoutValidation("X-Target-Environment", target);
 
         using var response = await client.SendAsync(httpRequest, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var error = MtnMoMoOpenApi.FromHttp(response.StatusCode, body);
             return new PaymentStatusResult(
-                false, PaymentStatus.RequiresReview, null, null, null, null,
-                "PROVIDER_ERROR", "Impossible de lire le statut MTN.");
+                error.KeepPending,
+                error.Status,
+                error.Code,
+                null,
+                null,
+                "MTN",
+                error.Code,
+                error.UserMessage);
         }
 
         var parsed = JsonSerializer.Deserialize<MtnStatusResponse>(body, JsonOpts);
         var raw = parsed?.Status ?? "UNKNOWN";
+        var mapped = MapStatus(raw);
+        if (mapped is PaymentStatus.Failed or PaymentStatus.Expired
+            && !string.IsNullOrWhiteSpace(parsed?.Reason))
+        {
+            var reason = MtnMoMoOpenApi.FromCode(parsed.Reason);
+            return new PaymentStatusResult(
+                true, reason.Status, parsed.Reason, decimal.TryParse(parsed.Amount, out var failedAmt) ? failedAmt : null,
+                parsed.Currency, "MTN", reason.Code, reason.UserMessage);
+        }
+
         return new PaymentStatusResult(
             true,
-            MapStatus(raw),
+            mapped,
             raw,
             decimal.TryParse(parsed?.Amount, out var amt) ? amt : null,
             parsed?.Currency,
@@ -155,9 +181,8 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
         HttpRequest request,
         CancellationToken cancellationToken = default)
     {
-        // MTN callbacks n'imposent pas toujours une signature HMAC documentée publiquement.
-        // En Local / secrets absents : accepter. Sinon accepter le POST (HTTPS + callback dédié).
-        if (IsLocal() || IsPlaceholder(_secrets.SubscriptionKey))
+        // Callback Open API : PUT une seule fois, sans retry. Le polling GET /requesttopay/{id} reste obligatoire.
+        if (IsLocal() || IsPlaceholder(ResolveSubscriptionKey()))
             return Task.FromResult(new WebhookValidationResult(true, null));
 
         return Task.FromResult(new WebhookValidationResult(true, null));
@@ -180,9 +205,10 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
             amount = amt;
 
         // externalId = notre PaymentCode ; financialTransactionId / reference = id MTN
-        var providerRef = request.Headers.TryGetValue("X-Reference-Id", out var xref)
-            ? xref.ToString()
-            : parsed?.FinancialTransactionId;
+        var providerRef = FirstNonEmpty(
+            request.Headers.TryGetValue("X-Reference-Id", out var xref) ? xref.ToString() : null,
+            parsed?.ReferenceId,
+            parsed?.FinancialTransactionId);
 
         return new MobileMoneyWebhookEventModel(
             parsed?.FinancialTransactionId ?? providerRef,
@@ -204,7 +230,7 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
             return Task.FromResult(new ProviderHealthResult(false, "MTN MoMo désactivé."));
         if (IsLocal())
             return Task.FromResult(new ProviderHealthResult(true, "MTN Local (simulateur)."));
-        if (IsPlaceholder(_secrets.SubscriptionKey) || IsPlaceholder(_secrets.ApiUserId) || IsPlaceholder(_secrets.ApiKey))
+        if (IsPlaceholder(ResolveSubscriptionKey()) || IsPlaceholder(_secrets.ApiUserId) || IsPlaceholder(_secrets.ApiKey))
             return Task.FromResult(new ProviderHealthResult(false, "Secrets MTN manquants."));
         return Task.FromResult(new ProviderHealthResult(true, $"MTN {_options.Providers.MtnDirect.Environment} configuré."));
     }
@@ -218,20 +244,40 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
         var basic = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{_secrets.ApiUserId}:{_secrets.ApiKey}"));
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, "collection/token/");
-        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
-        req.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", _secrets.SubscriptionKey);
-        req.Content = new StringContent(string.Empty);
+        Exception? last = null;
+        foreach (var subscriptionKey in SubscriptionKeys())
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "collection/token/");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Basic", basic);
+            req.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", subscriptionKey);
+            // Open API : /token n'accepte pas de body (400 BAD REQUEST sinon).
 
-        using var response = await client.SendAsync(req, ct);
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<MtnTokenResponse>(JsonOpts, ct)
-            ?? throw new InvalidOperationException("Réponse token MTN invalide.");
-        if (string.IsNullOrWhiteSpace(body.AccessToken))
-            throw new InvalidOperationException("Jeton MTN vide.");
+            using var response = await client.SendAsync(req, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                last = new InvalidOperationException("Clé d'abonnement MTN refusée (401). Essai de la Secondary Key.");
+                continue;
+            }
 
-        _tokenCache[cacheKey] = (body.AccessToken, DateTime.UtcNow.AddSeconds(Math.Max(60, body.ExpiresIn - 60)));
-        return body.AccessToken;
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await response.Content.ReadAsStringAsync(ct);
+                var mapped = MtnMoMoOpenApi.FromHttp(response.StatusCode, err);
+                last = new InvalidOperationException(mapped.UserMessage);
+                continue;
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<MtnTokenResponse>(JsonOpts, ct)
+                ?? throw new InvalidOperationException("Réponse token MTN invalide.");
+            if (string.IsNullOrWhiteSpace(body.AccessToken))
+                throw new InvalidOperationException("Jeton MTN vide.");
+
+            _workingSubscriptionKey = subscriptionKey;
+            _tokenCache[cacheKey] = (body.AccessToken, DateTime.UtcNow.AddSeconds(Math.Max(60, body.ExpiresIn - 60)));
+            return body.AccessToken;
+        }
+
+        throw last ?? new InvalidOperationException("Impossible d'obtenir un jeton MTN.");
     }
 
     private HttpClient CreateClient()
@@ -268,11 +314,62 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
 
     private void EnsureSecrets()
     {
-        if (IsPlaceholder(_secrets.SubscriptionKey) ||
+        if (IsPlaceholder(ResolveSubscriptionKey()) ||
             IsPlaceholder(_secrets.ApiUserId) ||
             IsPlaceholder(_secrets.ApiKey))
             throw new InvalidOperationException("Credentials MTN MoMo absents (secrets.json → MobileMoney:Mtn).");
     }
+
+    private string ResolveSubscriptionKey() => _secrets.ResolveSubscriptionKey();
+
+    private string ActiveSubscriptionKey() =>
+        !string.IsNullOrWhiteSpace(_workingSubscriptionKey)
+            ? _workingSubscriptionKey
+            : ResolveSubscriptionKey();
+
+    private IEnumerable<string> SubscriptionKeys()
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in new[] { _secrets.SubscriptionKey, _secrets.PrimaryKey, _secrets.SecondaryKey })
+        {
+            if (IsPlaceholder(key) || !seen.Add(key.Trim()))
+                continue;
+            yield return key.Trim();
+        }
+    }
+
+    private static PaymentInitiationResult PendingResult(string referenceId) =>
+        new(
+            true,
+            referenceId,
+            PaymentStatus.PendingCustomerConfirmation,
+            "PENDING",
+            "Consultez votre téléphone MTN et confirmez la demande de paiement. Ne communiquez jamais votre code secret.",
+            "*126#",
+            null,
+            null);
+
+    private async Task<PaymentInitiationResult> StatusAsInitiationAsync(string referenceId, CancellationToken ct)
+    {
+        var status = await GetStatusAsync(referenceId, ct);
+        if (!status.Success)
+            return PendingResult(referenceId);
+
+        return new PaymentInitiationResult(
+            true,
+            referenceId,
+            status.NormalizedStatus,
+            status.RawProviderStatus,
+            status.NormalizedStatus == PaymentStatus.PendingCustomerConfirmation
+                ? "Consultez votre téléphone MTN et confirmez la demande de paiement. Ne communiquez jamais votre code secret."
+                : null,
+            "*126#",
+            status.FailureCode,
+            status.FailureMessage);
+    }
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 
     private bool IsLocal() =>
         _options.Providers.MtnDirect.Environment.Equals("Local", StringComparison.OrdinalIgnoreCase);
@@ -333,6 +430,9 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
 
         [JsonPropertyName("financialTransactionId")]
         public string? FinancialTransactionId { get; set; }
+
+        [JsonPropertyName("reason")]
+        public string? Reason { get; set; }
     }
 
     private sealed class MtnCallbackPayload
@@ -351,5 +451,8 @@ public sealed class MtnMomoDirectGateway : IMobileMoneyGateway
 
         [JsonPropertyName("financialTransactionId")]
         public string? FinancialTransactionId { get; set; }
+
+        [JsonPropertyName("referenceId")]
+        public string? ReferenceId { get; set; }
     }
 }

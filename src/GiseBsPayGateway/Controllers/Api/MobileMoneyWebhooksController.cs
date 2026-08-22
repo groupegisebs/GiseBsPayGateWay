@@ -25,6 +25,7 @@ public class MobileMoneyWebhooksController : ControllerBase
         HandleAsync("orange", cancellationToken);
 
     [HttpPost("mtn")]
+    [HttpPut("mtn")]
     [RequestSizeLimit(64 * 1024)]
     public Task<IActionResult> Mtn(CancellationToken cancellationToken) =>
         HandleAsync("mtn", cancellationToken);
