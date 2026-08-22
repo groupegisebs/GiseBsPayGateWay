@@ -28,7 +28,16 @@ public static class DbSeeder
         }
         else
         {
-            await db.Database.MigrateAsync();
+            try
+            {
+                await db.Database.MigrateAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "EF MigrateAsync a échoué — le filet SQL va quand même rattraper le schéma.");
+            }
+
+            await SchemaFilet.EnsureAsync(db, logger);
         }
 
         await EnsureAdminUserAsync(userManager, auditService, seedOptions.AdminEmail, seedOptions.AdminPassword, "Administrateur GISEBS");
