@@ -215,13 +215,17 @@ else
     {
         errorApp.Run(async context =>
         {
-            var ex = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+            var ex = feature?.Error
+                ?? context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+            var originalPath = feature?.Path ?? context.Request.Path.Value ?? "";
             if (ex is not null)
             {
-                Log.Error(ex, "Erreur non gérée {Path}", context.Request.Path);
+                Log.Error(ex, "Erreur non gérée {Path}", originalPath);
             }
 
-            if (context.Request.Path.StartsWithSegments("/api"))
+            if (originalPath.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+                || context.Request.Path.StartsWithSegments("/api"))
             {
                 context.Response.StatusCode = ex is InvalidOperationException
                     ? StatusCodes.Status400BadRequest
@@ -231,6 +235,24 @@ else
                     ex?.Message ?? "Erreur interne Pay Gateway.",
                     null));
                 return;
+            }
+
+            if (ex is not null)
+            {
+                var message = ex.Message;
+                if (message.Length > 400)
+                    message = message[..400] + "…";
+                context.Response.Cookies.Append(
+                    "PayGatewayError",
+                    message,
+                    new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true,
+                        SameSite = SameSiteMode.Lax,
+                        MaxAge = TimeSpan.FromMinutes(10),
+                        IsEssential = true
+                    });
             }
 
             context.Response.Redirect("/Error");

@@ -1,3 +1,4 @@
+using GiseBsPayGateway.Constants;
 using GiseBsPayGateway.Entities;
 using Stripe;
 using Stripe.Checkout;
@@ -16,26 +17,28 @@ public static class StripeCheckoutFinancials
 
     public static void ApplySessionTaxToPayment(PaymentTransaction payment, Session session)
     {
-        long? subtotalCents = session.AmountSubtotal is > 0 ? session.AmountSubtotal : null;
-        long? totalCents = session.AmountTotal is > 0 ? session.AmountTotal : null;
+        long? subtotalMinor = session.AmountSubtotal is > 0 ? session.AmountSubtotal : null;
+        long? totalMinor = session.AmountTotal is > 0 ? session.AmountTotal : null;
 
-        if (subtotalCents is > 0)
+        if (subtotalMinor is > 0)
         {
-            payment.AmountSubtotal = subtotalCents.Value / 100m;
+            payment.AmountSubtotal = CatalogOptions.FromStripeUnitAmount(subtotalMinor.Value, payment.Currency);
         }
 
-        if (session.TotalDetails?.AmountTax is long taxCents && taxCents > 0)
+        if (session.TotalDetails?.AmountTax is long taxMinor && taxMinor > 0)
         {
-            payment.TaxAmount = taxCents / 100m;
+            payment.TaxAmount = CatalogOptions.FromStripeUnitAmount(taxMinor, payment.Currency);
         }
-        else if (totalCents is > 0 && subtotalCents is > 0 && totalCents > subtotalCents)
+        else if (totalMinor is > 0 && subtotalMinor is > 0 && totalMinor > subtotalMinor)
         {
-            payment.TaxAmount = (totalCents.Value - subtotalCents.Value) / 100m;
+            payment.TaxAmount = CatalogOptions.FromStripeUnitAmount(
+                totalMinor.Value - subtotalMinor.Value,
+                payment.Currency);
         }
 
-        if (totalCents is > 0)
+        if (totalMinor is > 0)
         {
-            var gross = totalCents.Value / 100m;
+            var gross = CatalogOptions.FromStripeUnitAmount(totalMinor.Value, payment.Currency);
             if (!payment.GrossAmount.HasValue || payment.GrossAmount.Value != gross)
             {
                 payment.GrossAmount = gross;
@@ -49,30 +52,34 @@ public static class StripeCheckoutFinancials
 
     public static void ApplyStripeInvoiceTaxToPayment(PaymentTransaction payment, Invoice invoice)
     {
-        long? subtotalCents = invoice.TotalExcludingTax is > 0 ? invoice.TotalExcludingTax : null;
-        subtotalCents ??= invoice.Subtotal is > 0 ? invoice.Subtotal : null;
+        long? subtotalMinor = invoice.TotalExcludingTax is > 0 ? invoice.TotalExcludingTax : null;
+        subtotalMinor ??= invoice.Subtotal is > 0 ? invoice.Subtotal : null;
 
-        if (subtotalCents is > 0)
+        if (subtotalMinor is > 0)
         {
-            payment.AmountSubtotal ??= subtotalCents.Value / 100m;
+            payment.AmountSubtotal ??= CatalogOptions.FromStripeUnitAmount(subtotalMinor.Value, payment.Currency);
         }
 
         if (invoice.TotalTaxes is { Count: > 0 })
         {
-            var tax = invoice.TotalTaxes.Sum(x => x.Amount) / 100m;
+            var tax = CatalogOptions.FromStripeUnitAmount(
+                invoice.TotalTaxes.Sum(x => x.Amount),
+                payment.Currency);
             if (tax > 0)
             {
                 payment.TaxAmount = tax;
             }
         }
-        else if (invoice.Total is > 0 && subtotalCents is > 0 && invoice.Total > subtotalCents)
+        else if (invoice.Total is > 0 && subtotalMinor is > 0 && invoice.Total > subtotalMinor)
         {
-            payment.TaxAmount = (invoice.Total - subtotalCents.Value) / 100m;
+            payment.TaxAmount = CatalogOptions.FromStripeUnitAmount(
+                invoice.Total - subtotalMinor.Value,
+                payment.Currency);
         }
 
         if (invoice.Total is > 0)
         {
-            payment.GrossAmount = invoice.Total / 100m;
+            payment.GrossAmount = CatalogOptions.FromStripeUnitAmount(invoice.Total, payment.Currency);
         }
 
         payment.BillingCountry ??= invoice.CustomerAddress?.Country;

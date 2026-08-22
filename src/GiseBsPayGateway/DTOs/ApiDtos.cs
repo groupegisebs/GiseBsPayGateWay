@@ -25,7 +25,9 @@ public record CreateCheckoutSessionRequest(
     BillingAddressDto? BillingAddress = null,
     CustomerUpdateDto? CustomerUpdate = null,
     /// <summary>Ex. ["card"], ["paypal"]. Null = méthodes Dashboard Stripe.</summary>
-    IReadOnlyList<string>? PaymentMethodTypes = null);
+    IReadOnlyList<string>? PaymentMethodTypes = null,
+    /// <summary>ISO 3166-1 alpha-2 du payeur (ex. CM). Sert à désactiver Stripe Tax hors CA/US/EU.</summary>
+    string? BillingCountry = null);
 
 public record CheckoutSessionResponse(
     string PaymentCode,

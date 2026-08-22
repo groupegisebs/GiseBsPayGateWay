@@ -38,8 +38,16 @@ public class IndexModel : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        await _africanTax.EnsureSeededAsync(cancellationToken);
-        Rates = _africanTax.ListRates();
+        try
+        {
+            await _africanTax.EnsureSeededAsync(cancellationToken);
+            Rates = _africanTax.ListRates();
+        }
+        catch (Exception ex)
+        {
+            Rates = [];
+            TempData["TaxRateError"] = $"Impossible de charger les taux par pays : {ex.Message}";
+        }
     }
 
     public async Task<IActionResult> OnPostSaveAsync(CancellationToken cancellationToken)

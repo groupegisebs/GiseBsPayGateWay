@@ -219,16 +219,22 @@ public sealed class AfricanTaxService : IAfricanTaxService
                     StringComparer.OrdinalIgnoreCase);
             }
 
-            return rows.ToDictionary(
-                r => r.CountryCode,
-                r => new AfricanTaxRateDto(
-                    r.CountryCode,
-                    r.CountryNameFr,
-                    r.TaxName,
-                    r.RatePercent,
-                    r.Notes,
-                    r.StandardRatePercent),
-                StringComparer.OrdinalIgnoreCase);
+            return rows
+                .GroupBy(r => r.CountryCode, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g =>
+                    {
+                        var r = g.First();
+                        return new AfricanTaxRateDto(
+                            r.CountryCode,
+                            r.CountryNameFr,
+                            r.TaxName,
+                            r.RatePercent,
+                            r.Notes,
+                            r.StandardRatePercent);
+                    },
+                    StringComparer.OrdinalIgnoreCase);
         })!;
     }
 

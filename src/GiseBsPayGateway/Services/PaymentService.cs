@@ -112,6 +112,12 @@ public class PaymentService : IPaymentService
             request = request with { BillingAddress = formattedBillingAddress };
         }
 
+        if (string.IsNullOrWhiteSpace(payment.BillingCountry)
+            && !string.IsNullOrWhiteSpace(request.BillingCountry))
+        {
+            payment.BillingCountry = request.BillingCountry.Trim().ToUpperInvariant();
+        }
+
         var (sessionId, url, clientSecret) = await _stripeService.CreateCheckoutSessionAsync(
             payment,
             customer,

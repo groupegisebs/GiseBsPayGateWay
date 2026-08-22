@@ -1,3 +1,4 @@
+using GiseBsPayGateway.Constants;
 using GiseBsPayGateway.Data;
 using GiseBsPayGateway.DTOs;
 using GiseBsPayGateway.Entities;
@@ -85,7 +86,7 @@ public class StripeService : IStripeService
         await ConfigureStripeAsync(cancellationToken);
 
         var expectedCurrency = plan.Currency.Trim().ToLowerInvariant();
-        var expectedAmount = (long)(plan.Amount * 100);
+        var expectedAmount = CatalogOptions.ToStripeUnitAmount(plan.Amount, expectedCurrency);
 
         if (!string.IsNullOrWhiteSpace(plan.StripePriceId))
         {
@@ -240,8 +241,12 @@ public class StripeService : IStripeService
             await ApplyStripeCustomerAddressAsync(stripeCustomerId, formattedAddress, cancellationToken);
         }
 
+        var usesAutomaticTax = StripeCheckoutTaxOptions.UsesAutomaticTax(planCurrency, payment.BillingCountry);
         var (billingAddressCollection, customerUpdateAddress) =
-            StripeCheckoutTaxOptions.Resolve(hasPrefilledBillingAddress, customerUpdate);
+            StripeCheckoutTaxOptions.Resolve(
+                hasPrefilledBillingAddress,
+                customerUpdate,
+                usesAutomaticTax);
 
         // PayPal Checkout Stripe : mode payment + prix one-shot (les Price récurrents sont incompatibles).
         var preferPayPal = paymentMethodTypes?.Any(x =>
@@ -261,7 +266,7 @@ public class StripeService : IStripeService
                     PriceData = new SessionLineItemPriceDataOptions
                     {
                         Currency = planCurrency,
-                        UnitAmount = (long)(plan.Amount * 100),
+                        UnitAmount = CatalogOptions.ToStripeUnitAmount(plan.Amount, planCurrency),
                         Product = stripeProductId
                     }
                 }
@@ -285,8 +290,7 @@ public class StripeService : IStripeService
             Mode = mode,
             Customer = stripeCustomerId,
             ClientReferenceId = payment.PaymentCode,
-            // Stripe Tax : activer dans le Dashboard (Settings → Tax), ajouter les enregistrements fiscaux canadiens (GST/HST/QST).
-            AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
+            AutomaticTax = new SessionAutomaticTaxOptions { Enabled = usesAutomaticTax },
             BillingAddressCollection = billingAddressCollection,
             LineItems = lineItems,
             Metadata = new Dictionary<string, string>
@@ -346,14 +350,31 @@ public class StripeService : IStripeService
         {
             var session = await sessionService.CreateAsync(options, cancellationToken: cancellationToken);
             _logger.LogInformation(
-                "Session Stripe créée {SessionId} pour paiement {PaymentCode} (currency={Currency}, embedded={Embedded})",
-                session.Id, payment.PaymentCode, planCurrency, embedded);
+                "Session Stripe créée {SessionId} pour paiement {PaymentCode} (currency={Currency}, tax={AutomaticTax}, country={Country}, embedded={Embedded})",
+                session.Id, payment.PaymentCode, planCurrency, usesAutomaticTax, payment.BillingCountry ?? "-", embedded);
             return (session.Id, session.Url, session.ClientSecret);
         }
         catch (StripeException ex) when (IsCurrencyConflict(ex))
         {
             throw new InvalidOperationException(
                 BuildCurrencyConflictMessage(planCurrency, customerCurrency: null),
+                ex);
+        }
+        catch (StripeException ex)
+        {
+            var stripeMessage = ex.StripeError?.Message ?? ex.Message;
+            _logger.LogError(
+                ex,
+                "Stripe a refusé la session de paiement {PaymentCode} (currency={Currency}, country={Country}, code={StripeCode}) : {StripeMessage}",
+                payment.PaymentCode,
+                planCurrency,
+                payment.BillingCountry ?? "-",
+                ex.StripeError?.Code,
+                stripeMessage);
+            throw new InvalidOperationException(
+                $"Stripe a refusé le paiement ({planCurrency.ToUpperInvariant()}"
+                + (string.IsNullOrWhiteSpace(payment.BillingCountry) ? "" : $", pays {payment.BillingCountry}")
+                + $") : {stripeMessage}",
                 ex);
         }
     }

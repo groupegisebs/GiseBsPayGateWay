@@ -37,6 +37,22 @@ public class StripeCheckoutFinancialsTests
     }
 
     [Fact]
+    public void ApplySessionTaxToPayment_XafZeroDecimal_NeDivisePasParCent()
+    {
+        var payment = new PaymentTransaction { Amount = 15000m, Currency = "xaf" };
+        var session = new Session
+        {
+            AmountSubtotal = 15000,
+            AmountTotal = 15000
+        };
+
+        StripeCheckoutFinancials.ApplySessionTaxToPayment(payment, session);
+
+        Assert.Equal(15000m, payment.AmountSubtotal);
+        Assert.Equal(15000m, payment.GrossAmount);
+    }
+
+    [Fact]
     public void ApplySessionTaxToPayment_DerivesTaxFromTotalMinusSubtotal()
     {
         var payment = new PaymentTransaction { Amount = 100m };

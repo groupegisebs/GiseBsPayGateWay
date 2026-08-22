@@ -49,6 +49,20 @@ public static class CatalogOptions
     public static bool IsZeroDecimalCurrency(string currency) =>
         currency.Trim().ToLowerInvariant() is "xof" or "xaf" or "ugx" or "rwf" or "jpy" or "krw";
 
+    /// <summary>Montant catalogue → entier Stripe (centimes, sauf devises zéro-décimale).</summary>
+    public static long ToStripeUnitAmount(decimal amount, string currency) =>
+        IsZeroDecimalCurrency(currency)
+            ? (long)decimal.Round(amount, 0, MidpointRounding.AwayFromZero)
+            : (long)decimal.Round(amount * 100m, 0, MidpointRounding.AwayFromZero);
+
+    /// <summary>Entier Stripe → montant catalogue.</summary>
+    public static decimal FromStripeUnitAmount(long stripeAmount, string? currency)
+    {
+        if (!string.IsNullOrWhiteSpace(currency) && IsZeroDecimalCurrency(currency))
+            return stripeAmount;
+        return stripeAmount / 100m;
+    }
+
     public record PlanCodeOption(string Code, string Label, BillingInterval BillingInterval);
 
     public record CurrencyOption(string Code, string Label);
